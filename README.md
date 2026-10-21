@@ -47,6 +47,23 @@
 
 ---
 
+## 📚 Полная техническая документация (SRS)
+
+Система детально спроектирована и задокументирована в соответствии с лучшими практиками системного анализа:
+
+👉 **[Перейти к полной Технической Спецификации (SRS) — `docs/hr_cv_helper_docs.md`](docs/hr_cv_helper_docs.md)**
+
+В документации представлены:
+* 🔄 **Бизнес-процесс TO-BE (BPMN 2.0):** [`docs/images/bpmn_process.png`](docs/images/bpmn_process.png)
+* 🧭 **Жизненный цикл резюме (UML State Machine):** [`docs/images/state_machine.png`](docs/images/state_machine.png)
+* 🎯 **Функциональные прецеденты (UML Use Case):** [`docs/images/use_case.png`](docs/images/use_case.png)
+* 🌐 **Системный контекст (C4 Context):** [`docs/images/c4_context.png`](docs/images/c4_context.png)
+* 📦 **Архитектура контейнеров (C4 Container):** [`docs/images/c4_container.png`](docs/images/c4_container.png)
+* ⚡ **Сценарий взаимодействия (UML Sequence):** [`docs/images/sequence_diagram.png`](docs/images/sequence_diagram.png)
+* 🗄️ **Модель данных PostgreSQL (ER Diagram):** [`docs/images/er_database.png`](docs/images/er_database.png)
+
+---
+
 ## 🏗 Архитектура и микросервисы
 
 Система построена на микросервисной архитектуре и оркестрируется через `docker-compose`:
