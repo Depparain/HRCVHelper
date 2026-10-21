@@ -1,0 +1,187 @@
+services:
+  # =========================================================================
+  # База данных PostgreSQL 16
+  # =========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: hrcv_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hrcvhelper}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hrcvhelper"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # Объектное хранилище S3 (MinIO)
+  # =========================================================================
+  s3:
+    image: elestio/minio:latest
+    container_name: hrcv_s3
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # Локальный LLM-сервер Ollama (Gemma-3)
+  # =========================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hrcv_ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+  # =========================================================================
+  # DBConnector (БД и S3)
+  # =========================================================================
+  db_connector:
+    build:
+      context: ./services/db_connector
+      dockerfile: Dockerfile
+    container_name: hrcv_db_connector
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-hrcvhelper}
+      S3_ENDPOINT_URL: http://s3:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-cv-resumes}
+      S3_REGION_NAME: us-east-1
+      DB_CONNECTOR_PORT: 8005
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    volumes:
+      - local_storage:/app/storage
+
+  # =========================================================================
+  # AuthSystem (Авторизация)
+  # =========================================================================
+  auth_system:
+    build:
+      context: ./services/auth_system
+      dockerfile: Dockerfile
+    container_name: hrcv_auth_system
+    restart: always
+    environment:
+      DB_CONNECTOR_URL: http://db_connector:8005
+      SECRET_KEY: ${SECRET_KEY:-super-secret-key-for-jwt-tokens-hrcvhelper}
+      AUTH_SERVICE_PORT: 8001
+    ports:
+      - "8001:8001"
+    depends_on:
+      - db_connector
+
+  # =========================================================================
+  # MDConvertor (MarkItDown)
+  # =========================================================================
+  md_convertor:
+    build:
+      context: ./services/md_convertor
+      dockerfile: Dockerfile
+    container_name: hrcv_md_convertor
+    restart: always
+    ports:
+      - "8002:8002"
+
+  # =========================================================================
+  # LLMConvertor (Ollama / Gemma-3)
+  # =========================================================================
+  llm_convertor:
+    build:
+      context: ./services/llm_convertor
+      dockerfile: Dockerfile
+    container_name: hrcv_llm_convertor
+    restart: always
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      LLM_SERVICE_PORT: 8003
+    ports:
+      - "8003:8003"
+    depends_on:
+      - ollama
+
+  # =========================================================================
+  # JSONToWord (docxtpl)
+  # =========================================================================
+  json_to_word:
+    build:
+      context: ./services/json_to_word
+      dockerfile: Dockerfile
+    container_name: hrcv_json_to_word
+    restart: always
+    ports:
+      - "8004:8004"
+
+  # =========================================================================
+  # APIGateway (Центральный оркестратор)
+  # =========================================================================
+  api_gateway:
+    build:
+      context: ./services/api_gateway
+      dockerfile: Dockerfile
+    container_name: hrcv_api_gateway
+    restart: always
+    environment:
+      AUTH_SYSTEM_URL: http://auth_system:8001
+      MD_CONVERTOR_URL: http://md_convertor:8002
+      LLM_CONVERTOR_URL: http://llm_convertor:8003
+      JSON_TO_WORD_URL: http://json_to_word:8004
+      DB_CONNECTOR_URL: http://db_connector:8005
+      GATEWAY_PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth_system
+      - md_convertor
+      - llm_convertor
+      - json_to_word
+      - db_connector
+
+  # =========================================================================
+  # Frontend (Flutter Web)
+  # =========================================================================
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: hrcv_frontend
+    restart: always
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api_gateway
+
+volumes:
+  postgres_data:
+  minio_data:
+  ollama_models:
+  local_storage:

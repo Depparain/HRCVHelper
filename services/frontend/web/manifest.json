@@ -1,0 +1,11 @@
+{
+  "name": "HRCVHelper",
+  "short_name": "HRCVHelper",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#6366F1",
+  "description": "Автоматизированная подготовка корпоративных резюме",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false
+}

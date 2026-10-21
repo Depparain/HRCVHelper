@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+.env.local
+
+# Environment variables & secrets (keep .env.example)
+.env
+!.env.example
+
+# Database files & local storage
+*.db
+*.sqlite
+*.sqlite3
+hrcvhelper.db
+services/db_connector/storage/resumes/*
+!services/db_connector/storage/resumes/.gitkeep
+
+# IDEs & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bkp
+.*.bkp
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.coverage.*
+
+# Scratch directory & temporary outputs
+scratch/
+tmp/
+temp/
+*.tmp
+
+# Office temporary lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Logs
+*.log
+logs/
