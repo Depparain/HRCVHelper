@@ -2,18 +2,23 @@ class UserProfile {
   final int hrId;
   final String fullName;
   final String login;
+  final String role;
 
   UserProfile({
     required this.hrId,
     required this.fullName,
     required this.login,
+    this.role = 'hr',
   });
+
+  bool get isAdmin => role == 'admin';
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       hrId: json['hr_id'] ?? 0,
       fullName: json['full_name'] ?? '',
       login: json['login'] ?? '',
+      role: json['role'] ?? 'hr',
     );
   }
 
@@ -22,6 +27,7 @@ class UserProfile {
       'hr_id': hrId,
       'full_name': fullName,
       'login': login,
+      'role': role,
     };
   }
 }

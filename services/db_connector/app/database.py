@@ -43,6 +43,7 @@ def init_db():
     try:
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE "HR" ADD COLUMN IF NOT EXISTS "Role" VARCHAR(32) NOT NULL DEFAULT \'hr\';'))
+            conn.execute(text('UPDATE "HR" SET "Role" = \'admin\' WHERE "Login" = \'hr_admin\';'))
     except Exception as e:
         logger.info("Миграция колонки Role: %s", e)
 

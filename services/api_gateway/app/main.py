@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
 from urllib.parse import quote
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Response, status
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -58,22 +58,56 @@ app.add_middleware(
 )
 
 
-# --- Хелперы для извлечения пользователя ---
+# --- Хелперы и зависимости для проверки авторизации и RBAC ---
 
-async def get_optional_current_user(authorization: Optional[str] = Header(None)) -> Optional[Dict[str, Any]]:
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    token = authorization.split(" ")[1]
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None),
+) -> Dict[str, Any]:
+    raw_token = None
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization.split(" ", 1)[1].strip()
+    elif token:
+        raw_token = token.strip()
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Требуется авторизация (отсутствует токен доступа)",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.post(f"{settings.auth_system_url}/auth/verify", json={"token": token})
+            resp = await client.post(f"{settings.auth_system_url}/auth/verify", json={"token": raw_token})
             if resp.status_code == 200:
                 data = resp.json()
-                if data.get("valid"):
-                    return data.get("user")
+                if data.get("valid") and data.get("user"):
+                    return data["user"]
     except Exception as e:
-        logger.warning("Ошибка проверки токена: %s", e)
-    return None
+        logger.warning("Ошибка связи с AuthSystem при проверке токена: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Сервис аутентификации временно недоступен",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Недействительный или истекший токен авторизации",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def require_admin_user(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    role = current_user.get("role", UserRole.HR.value)
+    if role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ запрещен: требуются права администратора",
+        )
+    return current_user
 
 
 # =========================================================================
@@ -109,14 +143,14 @@ async def login(req: LoginRequest):
 async def upload_cv(
     file: UploadFile = File(...),
     hr_id: Optional[int] = Form(None),
-    current_user: Optional[Dict[str, Any]] = Depends(get_optional_current_user),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     ФТ-HR.2: Загрузка исходного файла CV, конвертация в MD, семантический парсинг
     через Gemma-3 и возврат JSON-черновика со статусом 'Ожидает проверки HR'.
     """
     filename = file.filename or "cv_document"
-    effective_hr_id = hr_id or (current_user.get("hr_id") if current_user else 1) or 1
+    effective_hr_id = hr_id or current_user.get("hr_id")
 
     log_event("api_gateway", "INFO", f"Начало обработки резюме '{filename}' от HR_ID={effective_hr_id}")
 
@@ -201,6 +235,7 @@ async def upload_cv(
 async def validate_and_generate_docx(
     cv_id: int,
     validated_json: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     ФТ-HR.3 + ФТ-HR.4: Подтверждение проверенного HR-специалистом JSON,
@@ -346,7 +381,11 @@ async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
 
 
 @app.put("/api/v1/cv/{cv_id}/rework")
-async def return_cv_for_rework(cv_id: int, req: Optional[ReworkRequest] = None):
+async def return_cv_for_rework(
+    cv_id: int,
+    req: Optional[ReworkRequest] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     ФТ-HR.3: Возврат резюме на доработку при обнаружении ошибок/неточностей.
     Переводит резюме в статус 'Обработка резюме' и запускает фоновый процесс пересоздания с учетом замечаний HR.
@@ -375,7 +414,11 @@ async def return_cv_for_rework(cv_id: int, req: Optional[ReworkRequest] = None):
 
 
 @app.put("/api/v1/cv/{cv_id}/draft")
-async def save_cv_draft(cv_id: int, draft_json: Dict[str, Any]):
+async def save_cv_draft(
+    cv_id: int,
+    draft_json: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     ФТ-HR.3: Сохранение промежуточного черновика JSON HR-специалистом без генерации DOCX.
     """
@@ -391,7 +434,10 @@ async def save_cv_draft(cv_id: int, draft_json: Dict[str, Any]):
 
 
 @app.get("/api/v1/cv/{cv_id}", response_model=CVDetailResponse)
-async def get_cv(cv_id: int):
+async def get_cv(
+    cv_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     Получение данных резюме, статуса и ссылки на готовый .docx.
     """
@@ -415,7 +461,10 @@ async def get_cv(cv_id: int):
 
 
 @app.get("/api/v1/cv/{cv_id}/download")
-async def download_cv_docx(cv_id: int):
+async def download_cv_docx(
+    cv_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     Скачивание сгенерированного корпоративного документа .docx из S3.
     """
@@ -446,7 +495,12 @@ async def download_cv_docx(cv_id: int):
 
 
 @app.get("/api/v1/cv", response_model=List[CVDetailResponse])
-async def list_cvs(hr_id: Optional[int] = None, skip: int = 0, limit: int = 50):
+async def list_cvs(
+    hr_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 50,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     Получение списка резюме (с фильтром по HR-специалисту).
     """
@@ -476,7 +530,10 @@ async def list_cvs(hr_id: Optional[int] = None, skip: int = 0, limit: int = 50):
 # =========================================================================
 
 @app.get("/api/v1/admin/logs", response_model=AdminLogsResponse)
-def get_logs(limit: int = 100):
+def get_logs(
+    limit: int = 100,
+    current_user: Dict[str, Any] = Depends(require_admin_user),
+):
     """
     ФТ-АДМ.1: Просмотр системных логов работы контейнеров.
     """
@@ -485,7 +542,9 @@ def get_logs(limit: int = 100):
 
 
 @app.get("/api/v1/admin/health", response_model=HealthReportResponse)
-async def get_health_report():
+async def get_health_report(
+    current_user: Dict[str, Any] = Depends(require_admin_user),
+):
     """
     ФТ-АДМ.2: Сводный отчет о состоянии всех микросервисов и хранилищ системы (health report).
     """
