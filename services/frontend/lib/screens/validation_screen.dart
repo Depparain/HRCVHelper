@@ -126,6 +126,62 @@ class _ValidationScreenState extends State<ValidationScreen> {
     }
   }
 
+  Future<void> _returnForRework() async {
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await apiService.returnForRework(widget.cvId);
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Резюме #${widget.cvId} возвращено на доработку (статус: Обработка резюме)'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    _syncData();
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await apiService.saveDraft(widget.cvId, _data);
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Черновик резюме #${widget.cvId} сохранен в базе данных'),
+            backgroundColor: AppColors.secondary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+        });
+      }
+    }
+  }
+
   void _addSkill() {
     final skill = _newSkillController.text.trim();
     if (skill.isNotEmpty) {
@@ -421,7 +477,7 @@ class _ValidationScreenState extends State<ValidationScreen> {
               Row(
                 children: [
                   OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _isSaving ? null : _returnForRework,
                     icon: const Icon(Icons.undo_rounded, size: 16, color: AppColors.error),
                     label: const Text('Вернуть на доработку', style: TextStyle(color: AppColors.error)),
                     style: OutlinedButton.styleFrom(
@@ -431,12 +487,7 @@ class _ValidationScreenState extends State<ValidationScreen> {
                   ),
                   const SizedBox(width: 10),
                   OutlinedButton.icon(
-                    onPressed: () {
-                      _syncData();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Черновик успешно сохранен в памяти')),
-                      );
-                    },
+                    onPressed: _isSaving ? null : _saveDraft,
                     icon: const Icon(Icons.save_outlined, size: 16),
                     label: const Text('Сохранить черновик'),
                   ),

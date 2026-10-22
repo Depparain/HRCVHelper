@@ -273,6 +273,39 @@ async def validate_and_generate_docx(
         )
 
 
+@app.put("/api/v1/cv/{cv_id}/rework")
+async def return_cv_for_rework(cv_id: int):
+    """
+    ФТ-HR.3: Возврат резюме на доработку при обнаружении ошибок/неточностей.
+    Переводит резюме в статус 'Обработка резюме' (согласно UML State Machine).
+    """
+    log_event("api_gateway", "WARNING", f"[CV {cv_id}] HR вернул резюме на доработку (Найдены ошибки). Переход в статус: Обработка резюме")
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.put(
+            f"{settings.db_connector_url}/cv/{cv_id}/status",
+            json={"status": "Обработка резюме"},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail="Не удалось обновить статус резюме в БД")
+        return {"cv_id": cv_id, "status": "Обработка резюме", "message": "Резюме возвращено на доработку"}
+
+
+@app.put("/api/v1/cv/{cv_id}/draft")
+async def save_cv_draft(cv_id: int, draft_json: Dict[str, Any]):
+    """
+    ФТ-HR.3: Сохранение промежуточного черновика JSON HR-специалистом без генерации DOCX.
+    """
+    log_event("api_gateway", "INFO", f"[CV {cv_id}] Сохранение черновика HR")
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.put(
+            f"{settings.db_connector_url}/cv/{cv_id}",
+            json={"jsonb": draft_json, "status": "Ожидает проверки HR"},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail="Не удалось сохранить черновик в БД")
+        return {"cv_id": cv_id, "status": "Ожидает проверки HR", "message": "Черновик успешно сохранен"}
+
+
 @app.get("/api/v1/cv/{cv_id}", response_model=CVDetailResponse)
 async def get_cv(cv_id: int):
     """

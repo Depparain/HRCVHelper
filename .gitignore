@@ -54,3 +54,8 @@ temp/
 # Logs
 *.log
 logs/
+
+# Design mockups & raw assets
+Макет дизайна/
+*[Мм]акет*
+

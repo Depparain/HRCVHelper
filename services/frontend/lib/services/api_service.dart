@@ -103,6 +103,41 @@ class ApiService {
     }
   }
 
+  // --- Возврат резюме на доработку ---
+
+  Future<void> returnForRework(int cvId) async {
+    final response = await http.put(
+      Uri.parse('${ApiConstants.baseUrl}/api/v1/cv/$cvId/rework'),
+      headers: _headers,
+    );
+    if (response.statusCode != 200) {
+      String errorMsg = 'Не удалось вернуть резюме на доработку';
+      try {
+        final errData = jsonDecode(utf8.decode(response.bodyBytes));
+        errorMsg = errData['detail'] ?? errorMsg;
+      } catch (_) {}
+      throw Exception(errorMsg);
+    }
+  }
+
+  // --- Сохранение черновика резюме ---
+
+  Future<void> saveDraft(int cvId, CVJsonData draftJson) async {
+    final response = await http.put(
+      Uri.parse('${ApiConstants.baseUrl}/api/v1/cv/$cvId/draft'),
+      headers: _headers,
+      body: jsonEncode(draftJson.toJson()),
+    );
+    if (response.statusCode != 200) {
+      String errorMsg = 'Не удалось сохранить черновик';
+      try {
+        final errData = jsonDecode(utf8.decode(response.bodyBytes));
+        errorMsg = errData['detail'] ?? errorMsg;
+      } catch (_) {}
+      throw Exception(errorMsg);
+    }
+  }
+
   // --- Получение данных резюме ---
 
   Future<CVRecord> getCV(int cvId) async {

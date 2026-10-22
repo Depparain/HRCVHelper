@@ -426,11 +426,11 @@
 
         <!-- Action suite buttons -->
         <div class="flex items-center gap-2.5">
-          <button onclick="showDashboard()" class="px-3.5 py-2 rounded-xl bg-roseBg hover:bg-rose-100 text-roseText border border-roseBorder text-xs font-semibold flex items-center gap-1.5">
+          <button id="btn-rework" onclick="returnForRework()" class="px-3.5 py-2 rounded-xl bg-roseBg hover:bg-rose-100 text-roseText border border-roseBorder text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[16px]">undo</span>
             <span>Вернуть на доработку</span>
           </button>
-          <button onclick="saveDraftNotification()" class="px-3.5 py-2 rounded-xl bg-surface-low hover:bg-surface-container text-text-primary border border-surface-container text-xs font-semibold flex items-center gap-1.5">
+          <button id="btn-save-draft" onclick="saveDraftNotification()" class="px-3.5 py-2 rounded-xl bg-surface-low hover:bg-surface-container text-text-primary border border-surface-container text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[16px]">save</span>
             <span>Сохранить черновик</span>
           </button>
@@ -1561,9 +1561,70 @@
       alert('JSON скопирован в буфер обмена');
     }
 
-    function saveDraftNotification() {
+    async function returnForRework() {
+      if (!activeCvId) return;
+      if (!confirm(`Вернуть резюме #${activeCvId} на доработку? Статус изменится на «Обработка резюме».`)) {
+        return;
+      }
+      const btn = document.getElementById('btn-rework');
+      const origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">sync</span><span>Возврат...</span>`;
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/v1/cv/${activeCvId}/rework`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentToken}`
+          }
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'Не удалось вернуть резюме на доработку');
+        }
+
+        alert(`Резюме #${activeCvId} возвращено на доработку (статус: Обработка резюме).`);
+        showDashboard();
+        await loadCVs();
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+
+    async function saveDraftNotification() {
+      if (!activeCvId) return;
       syncActiveJsonFromInputs();
-      alert('Черновик резюме успешно сохранен');
+      const btn = document.getElementById('btn-save-draft');
+      const origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">sync</span><span>Сохранение...</span>`;
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/v1/cv/${activeCvId}/draft`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentToken}`
+          },
+          body: JSON.stringify(activeCvJson)
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'Не удалось сохранить черновик');
+        }
+
+        alert(`Черновик резюме #${activeCvId} успешно сохранен в базе данных.`);
+      } catch (err) {
+        alert('Ошибка сохранения черновика: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
     }
 
     async function submitValidation() {
