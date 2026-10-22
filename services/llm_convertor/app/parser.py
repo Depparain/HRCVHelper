@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import httpx
 
-from .config import settings
+from .config import settings, get_cached_prompt_files, get_tech_dictionary
 from .schemas import CVJsonContract, ProjectItem, EducationItem, AdvancedTrainingItem
 
 logger = logging.getLogger(__name__)
@@ -20,30 +20,13 @@ MONTHS_RU = {
 
 MONTH_CAPS = r"(?:Январ[ья]|Феврал[ья]|Март[а]?|Апрел[ья]|Ма[яй]|Июн[ья]|Июл[ья]|Август[а]?|Сентябр[ья]|Октябр[ья]|Ноябр[ья]|Декабр[ья])"
 
-TECH_DICTIONARY = [
-    ".NET", ".NET Framework", "C#", "C++", "Java", "Python", "Go", "Golang", "Rust", "PHP", "JavaScript", "TypeScript",
-    "HTML", "HTML5", "CSS", "CSS3", "Angular", "AngularJS", "React", "Vue.js", "Vue", "Node.js", "Next.js",
-    "Django", "FastAPI", "Spring", "ASP.NET", "ASP.NET MVC", "ASP.NET WebForms", "WCF",
-    "SQL", "PostgreSQL", "MySQL", "MS SQL", "MSSQL", "Oracle", "MongoDB", "Redis", "JSON", "JSONB", "JSON Schema",
-    "GraphQL", "REST", "REST API", "SOAP", "gRPC", "Docker", "Kubernetes", "Git", "GitLab", "Jenkins", "CI/CD", "Linux",
-    "Postman", "Swagger", "Kafka", "Apache Kafka", "RabbitMQ", "Prometheus", "Grafana", "ELK",
-    "Jira", "Confluence", "Atlassian Jira", "Atlassian Confluence", "Яндекс Вики",
-    "Figma", "Draw.io", "PlantUML", "ArchiMate", "C4", "ADR/RFC", "BPMN", "BPMN 2.0", "UML", "DFD", "ETL", "Data Mapping",
-    "User Stories", "Use Cases", "ER-диаграммы", "Agile", "Scrum", "Kanban", "LeSS", "SAFe", "LLM",
-    "ИТ-архитектура", "Архитектурный надзор", "Системный дизайн", "Системный анализ", "Анализ требований", "Аналитическое мышление",
-    "Постановка задач разработчикам", "Базы данных", "реляционные БД", "MS SharePoint", "Microsoft Office", "Microsoft Visio",
-    "Team Foundation Server", "jQuery"
-]
+# Словарь технологий загружается из внешнего файла конфигурации config/tech_dictionary.json
+TECH_DICTIONARY = get_tech_dictionary()
 
 
 def _load_prompt_files() -> tuple[str, str]:
-    prompt_text = ""
-    example_text = ""
-    if settings.prompt_path.exists():
-        prompt_text = settings.prompt_path.read_text(encoding="utf-8")
-    if settings.schema_path.exists():
-        example_text = settings.schema_path.read_text(encoding="utf-8")
-    return prompt_text, example_text
+    """Возвращает кэшированные промпты из конфигурации."""
+    return get_cached_prompt_files()
 
 
 def clean_non_breaking(text: str) -> str:
