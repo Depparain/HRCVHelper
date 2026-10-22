@@ -21,6 +21,7 @@ def create_hr(db: Session, hr_in: HRCreate) -> HR:
         full_name=hr_in.full_name,
         login=hr_in.login,
         hash_pass=hr_in.hash_pass,
+        role=hr_in.role or "hr",
     )
     db.add(db_hr)
     db.commit()

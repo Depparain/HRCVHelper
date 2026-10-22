@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class HRBase(BaseModel):
     full_name: str
     login: str
+    role: Optional[str] = "hr"
 
 
 class HRCreate(HRBase):
@@ -15,6 +16,7 @@ class HRCreate(HRBase):
 
 class HRResponse(HRBase):
     hr_id: int
+    role: str = "hr"
     model_config = ConfigDict(from_attributes=True)
 
 

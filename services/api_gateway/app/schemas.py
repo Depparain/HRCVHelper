@@ -16,6 +16,7 @@ class UserProfile(BaseModel):
     hr_id: int
     full_name: str
     login: str
+    role: str = "hr"
 
 
 class LoginResponse(BaseModel):

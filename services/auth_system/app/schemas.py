@@ -8,6 +8,7 @@ class HRUserPayload(BaseModel):
     hr_id: int
     full_name: str
     login: str
+    role: str = "hr"
 
 
 class LoginRequest(BaseModel):
@@ -26,6 +27,7 @@ class RegisterRequest(BaseModel):
     full_name: str
     login: str
     password: str
+    role: Optional[str] = "hr"
 
 
 class VerifyTokenRequest(BaseModel):

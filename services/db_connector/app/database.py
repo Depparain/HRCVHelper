@@ -1,6 +1,6 @@
 import logging
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from .config import settings
 from .models import Base
@@ -40,6 +40,11 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE "HR" ADD COLUMN IF NOT EXISTS "Role" VARCHAR(32) NOT NULL DEFAULT \'hr\';'))
+    except Exception as e:
+        logger.info("Миграция колонки Role: %s", e)
 
 def get_db():
     db = SessionLocal()

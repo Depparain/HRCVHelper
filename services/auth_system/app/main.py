@@ -34,10 +34,11 @@ async def lifespan(app: FastAPI):
                     "full_name": "Администратор HR",
                     "login": "hr_admin",
                     "hash_pass": hash_password("hrpassword123"),
+                    "role": "admin",
                 }
                 create_resp = await client.post(f"{settings.db_connector_url}/users", json=payload)
                 if create_resp.status_code == 201:
-                    logger.info("Создан дефолтный пользователь HR: hr_admin")
+                    logger.info("Создан дефолтный пользователь HR (admin): hr_admin")
 
             rec_resp = await client.get(f"{settings.db_connector_url}/users/login/recruiter@hrhelper.ai")
             if rec_resp.status_code == 404:
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
                     "full_name": "Елена Смирнова",
                     "login": "recruiter@hrhelper.ai",
                     "hash_pass": hash_password("SecretAuth2024!"),
+                    "role": "hr",
                 }
                 create_rec = await client.post(f"{settings.db_connector_url}/users", json=rec_payload)
                 if create_rec.status_code == 201:
@@ -116,6 +118,7 @@ async def login(req: LoginRequest):
         hr_id=user_data["hr_id"],
         full_name=user_data["full_name"],
         login=user_data["login"],
+        role=user_data.get("role", "hr"),
     )
 
     token = create_access_token(user_payload.model_dump())
@@ -133,6 +136,7 @@ async def register(req: RegisterRequest):
         "full_name": req.full_name,
         "login": req.login,
         "hash_pass": hashed,
+        "role": req.role or "hr",
     }
 
     try:
@@ -147,6 +151,7 @@ async def register(req: RegisterRequest):
                 hr_id=created["hr_id"],
                 full_name=created["full_name"],
                 login=created["login"],
+                role=created.get("role", "hr"),
             )
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"Ошибка сервиса БД: {e}")
@@ -162,6 +167,7 @@ def verify_token(req: VerifyTokenRequest):
         hr_id=payload["hr_id"],
         full_name=payload.get("full_name", ""),
         login=payload.get("login", ""),
+        role=payload.get("role", "hr"),
     )
     return VerifyTokenResponse(valid=True, user=user)
 

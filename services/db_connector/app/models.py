@@ -21,6 +21,11 @@ class CVStatus(str, enum.Enum):
     ERROR = "Ошибка парсинга"
 
 
+class UserRole(str, enum.Enum):
+    HR = "hr"
+    ADMIN = "admin"
+
+
 class HR(Base):
     """Таблица HR-специалистов."""
     __tablename__ = "HR"
@@ -29,6 +34,7 @@ class HR(Base):
     full_name = Column("Full_Name", String(255), nullable=False)
     login = Column("Login", String(128), unique=True, nullable=False, index=True)
     hash_pass = Column("Hash_Pass", String(255), nullable=False)
+    role = Column("Role", String(32), nullable=False, default=UserRole.HR.value)
 
     cvs = relationship("CV", back_populates="hr", cascade="all, delete-orphan")
 
@@ -49,11 +55,16 @@ class HR(Base):
     def Hash_Pass(self) -> str:
         return self.hash_pass
 
+    @property
+    def Role(self) -> str:
+        return self.role
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "hr_id": self.hr_id,
             "full_name": self.full_name,
             "login": self.login,
+            "role": self.role,
         }
 
 
