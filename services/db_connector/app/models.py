@@ -17,6 +17,7 @@ class CVStatus(str, enum.Enum):
     AWAITING_HR = "Ожидает проверки HR"
     DOCX_GENERATION = "Формирование docx"
     READY = "Готово"
+    ERROR = "Ошибка парсинга"
 
 
 class HR(Base):

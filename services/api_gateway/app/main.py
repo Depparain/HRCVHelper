@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .config import settings
+from .enums import CVStatus, UserRole
 from .schemas import (
     LoginRequest,
     LoginResponse,
@@ -136,7 +137,7 @@ async def upload_cv(
                     "education": [],
                     "projects": []
                 },
-                "status": "Загружено",
+                "status": CVStatus.UPLOADED.value,
             }
             create_resp = await client.post(f"{settings.db_connector_url}/cv", json=init_cv_payload)
             if create_resp.status_code != 201:
@@ -148,8 +149,8 @@ async def upload_cv(
             raise HTTPException(status_code=503, detail="Сервис базы данных недоступен")
 
         # 2. Переход: "Конвертация в MD"
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: Конвертация в MD")
-        await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": "Конвертация в MD"})
+        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.MD_CONVERSION.value}")
+        await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.MD_CONVERSION.value})
 
         try:
             files = {"file": (filename, io.BytesIO(file_bytes), file.content_type or "application/octet-stream")}
@@ -162,8 +163,8 @@ async def upload_cv(
             raise HTTPException(status_code=503, detail="Сервис MDConvertor недоступен")
 
         # 3. Переход: "Обработка резюме" (LLM Gemma-3)
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: Обработка резюме (Gemma-3)")
-        await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": "Обработка резюме"})
+        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.LLM_PROCESSING.value} (Gemma-3)")
+        await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.LLM_PROCESSING.value})
 
         try:
             llm_payload = {"markdown": markdown_content, "original_filename": filename}
@@ -178,10 +179,10 @@ async def upload_cv(
             raise HTTPException(status_code=503, detail="Сервис LLMConvertor недоступен")
 
         # 4. Переход: "Ожидает проверки HR" и сохранение черновика JSONB
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Парсинг завершен. Переход в статус: Ожидает проверки HR")
+        log_event("api_gateway", "INFO", f"[CV {cv_id}] Парсинг завершен. Переход в статус: {CVStatus.AWAITING_HR.value}")
         update_payload = {
             "jsonb": parsed_data,
-            "status": "Ожидает проверки HR",
+            "status": CVStatus.AWAITING_HR.value,
         }
         update_resp = await client.put(f"{settings.db_connector_url}/cv/{cv_id}", json=update_payload)
         if update_resp.status_code != 200:
@@ -190,7 +191,7 @@ async def upload_cv(
         return CVUploadResponse(
             cv_id=cv_id,
             hr_id=effective_hr_id,
-            status="Ожидает проверки HR",
+            status=CVStatus.AWAITING_HR.value,
             data=parsed_data,
             filename=filename,
         )
@@ -216,10 +217,10 @@ async def validate_and_generate_docx(
         cv_record = cv_check.json()
 
         # 1. Переводим статус в "Формирование docx" и обновляем JSONB
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: Формирование docx")
+        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.DOCX_GENERATION.value}")
         await client.put(
             f"{settings.db_connector_url}/cv/{cv_id}",
-            json={"jsonb": validated_json, "status": "Формирование docx"},
+            json={"jsonb": validated_json, "status": CVStatus.DOCX_GENERATION.value},
         )
 
         # 2. Вызов сервиса JSONToWord (docxtpl)
@@ -257,10 +258,10 @@ async def validate_and_generate_docx(
             raise HTTPException(status_code=503, detail="Хранилище S3 недоступно")
 
         # 4. Фиксация статуса "Готово" и ключа Docx в БД
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Документ сохранен в S3. Переход в статус: Готово")
+        log_event("api_gateway", "INFO", f"[CV {cv_id}] Документ сохранен в S3. Переход в статус: {CVStatus.READY.value}")
         final_resp = await client.put(
             f"{settings.db_connector_url}/cv/{cv_id}/docx",
-            params={"docx_key": object_key, "status": "Готово"},
+            params={"docx_key": object_key, "status": CVStatus.READY.value},
         )
         if final_resp.status_code != 200:
             raise HTTPException(status_code=500, detail="Не удалось обновить статус 'Готово' в БД")
@@ -270,7 +271,7 @@ async def validate_and_generate_docx(
         return CVValidateResponse(
             cv_id=cv_id,
             hr_id=cv_record["hr_id"],
-            status="Готово",
+            status=CVStatus.READY.value,
             docx_url=docx_url_or_key,
             download_url=download_url,
             data=validated_json,
@@ -319,7 +320,7 @@ async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
             llm_resp = await client.post(f"{settings.llm_convertor_url}/parse", json=llm_payload)
             if llm_resp.status_code != 200:
                 log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка LLM при повторном парсинге: {llm_resp.text}")
-                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": "Ошибка парсинга"})
+                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.ERROR.value})
                 return
 
             new_parsed_data = llm_resp.json().get("data", {})
@@ -330,16 +331,16 @@ async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
 
             update_payload = {
                 "jsonb": new_parsed_data,
-                "status": "Ожидает проверки HR",
+                "status": CVStatus.AWAITING_HR.value,
             }
             await client.put(f"{settings.db_connector_url}/cv/{cv_id}", json=update_payload)
-            log_event("api_gateway", "INFO", f"[CV {cv_id}] Повторная обработка завершена. Статус: Ожидает проверки HR")
+            log_event("api_gateway", "INFO", f"[CV {cv_id}] Повторная обработка завершена. Статус: {CVStatus.AWAITING_HR.value}")
 
     except Exception as e:
         log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка в фоновом конвейере доработки: {e}")
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": "Ошибка парсинга"})
+                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.ERROR.value})
         except Exception:
             pass
 
@@ -352,12 +353,12 @@ async def return_cv_for_rework(cv_id: int, req: Optional[ReworkRequest] = None):
     """
     comment = req.comment if req else None
     comment_str = f" Замечания HR: '{comment}'" if comment else ""
-    log_event("api_gateway", "WARNING", f"[CV {cv_id}] HR вернул резюме на доработку (Найдены ошибки).{comment_str} Переход в статус: Обработка резюме")
+    log_event("api_gateway", "WARNING", f"[CV {cv_id}] HR вернул резюме на доработку (Найдены ошибки).{comment_str} Переход в статус: {CVStatus.LLM_PROCESSING.value}")
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.put(
             f"{settings.db_connector_url}/cv/{cv_id}/status",
-            json={"status": "Обработка резюме"},
+            json={"status": CVStatus.LLM_PROCESSING.value},
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail="Не удалось обновить статус резюме в БД")
@@ -367,7 +368,7 @@ async def return_cv_for_rework(cv_id: int, req: Optional[ReworkRequest] = None):
 
     return {
         "cv_id": cv_id,
-        "status": "Обработка резюме",
+        "status": CVStatus.LLM_PROCESSING.value,
         "message": "Резюме возвращено на доработку, запущен повторный парсинг ИИ",
         "comment": comment,
     }
@@ -382,11 +383,11 @@ async def save_cv_draft(cv_id: int, draft_json: Dict[str, Any]):
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.put(
             f"{settings.db_connector_url}/cv/{cv_id}",
-            json={"jsonb": draft_json, "status": "Ожидает проверки HR"},
+            json={"jsonb": draft_json, "status": CVStatus.AWAITING_HR.value},
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail="Не удалось сохранить черновик в БД")
-        return {"cv_id": cv_id, "status": "Ожидает проверки HR", "message": "Черновик успешно сохранен"}
+        return {"cv_id": cv_id, "status": CVStatus.AWAITING_HR.value, "message": "Черновик успешно сохранен"}
 
 
 @app.get("/api/v1/cv/{cv_id}", response_model=CVDetailResponse)

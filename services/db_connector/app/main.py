@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from .database import engine, get_db, init_db
-from .models import HR, CV
+from .models import HR, CV, CVStatus
 from .schemas import (
     HRCreate,
     HRResponse,
@@ -170,7 +170,7 @@ def update_cv_status_record(cv_id: int, update: CVStatusUpdate, db: Session = De
 
 
 @app.put("/cv/{cv_id}/docx", response_model=CVResponse)
-def update_cv_docx_record(cv_id: int, docx_key: str, status: Optional[str] = "Готово", db: Session = Depends(get_db)):
+def update_cv_docx_record(cv_id: int, docx_key: str, status: Optional[str] = CVStatus.READY.value, db: Session = Depends(get_db)):
     from . import crud
     db_cv = crud.update_cv_docx(db, cv_id, docx_key, status)
     if not db_cv:
