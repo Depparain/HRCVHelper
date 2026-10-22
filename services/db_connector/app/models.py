@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import enum
 from typing import Any, Dict, Optional
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, DeclarativeBase
 
 class Base(DeclarativeBase):
@@ -43,7 +44,7 @@ class CV(Base):
 
     CV_ID = Column(Integer, primary_key=True, autoincrement=True, index=True)
     HR_ID = Column(Integer, ForeignKey("HR.HR_ID"), nullable=False, index=True)
-    JSONB = Column(JSON, nullable=False, default=dict)
+    JSONB = Column(JSONB, nullable=False, default=dict)
     Status = Column(String(64), nullable=False, default=CVStatus.UPLOADED.value)
     Docx = Column(Text, nullable=True)
 
