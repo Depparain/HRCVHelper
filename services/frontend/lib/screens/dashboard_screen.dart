@@ -31,6 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _pollingTimer;
   bool _isUploadingBackground = false;
   String? _uploadingFileName;
+  final Set<String> _readNotificationIds = {};
 
   @override
   void initState() {
@@ -181,6 +182,308 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }
     }
+  }
+
+  List<Map<String, dynamic>> _getNotifications() {
+    final list = <Map<String, dynamic>>[];
+    for (final cv in _allCVs) {
+      final fio = cv.jsonData.fio.isNotEmpty ? cv.jsonData.fio : 'Кандидат #${cv.cvId}';
+      final role = cv.jsonData.vacancy.isNotEmpty ? ' (${cv.jsonData.vacancy})' : '';
+
+      if (cv.status == 'Ожидает проверки HR') {
+        list.add({
+          'id': 'cv_${cv.cvId}_pending',
+          'cvId': cv.cvId,
+          'cvRecord': cv,
+          'type': 'pending',
+          'title': 'Ожидает проверки HR',
+          'message': '$fio$role — данные извлечены нейросетью и готовы к валидации',
+          'badge': 'Проверка',
+          'badgeColor': const Color(0xFFD97706),
+          'badgeBg': const Color(0xFFFEF3C7),
+          'icon': Icons.rule_rounded,
+          'iconColor': const Color(0xFFD97706),
+          'actionLabel': 'Проверить',
+        });
+      } else if (cv.status == 'Обработка резюме') {
+        final rework = cv.jsonData.reworkComment;
+        list.add({
+          'id': 'cv_${cv.cvId}_processing',
+          'cvId': cv.cvId,
+          'cvRecord': cv,
+          'type': 'processing',
+          'title': rework != null && rework.isNotEmpty ? 'На доработке у ИИ' : 'Обработка резюме',
+          'message': rework != null && rework.isNotEmpty ? '$fio: «$rework»' : '$fio$role — выполняется извлечение структуры',
+          'badge': rework != null && rework.isNotEmpty ? 'Доработка' : 'В процессе',
+          'badgeColor': AppColors.secondary,
+          'badgeBg': const Color(0xFFEFF6FF),
+          'icon': Icons.sync_rounded,
+          'iconColor': AppColors.secondary,
+          'actionLabel': 'Смотреть',
+        });
+      } else if (cv.status == 'Готово') {
+        list.add({
+          'id': 'cv_${cv.cvId}_ready',
+          'cvId': cv.cvId,
+          'cvRecord': cv,
+          'type': 'ready',
+          'title': 'Резюме готово',
+          'message': '$fio$role — DOCX успешно сформирован и доступен для скачивания',
+          'badge': 'Готово',
+          'badgeColor': const Color(0xFF059669),
+          'badgeBg': const Color(0xFFD1FAE5),
+          'icon': Icons.task_alt_rounded,
+          'iconColor': const Color(0xFF059669),
+          'actionLabel': 'Скачать',
+        });
+      } else if (cv.status.contains('Ошибк')) {
+        list.add({
+          'id': 'cv_${cv.cvId}_error',
+          'cvId': cv.cvId,
+          'cvRecord': cv,
+          'type': 'error',
+          'title': 'Ошибка обработки',
+          'message': '$fio — возникла ошибка при парсинге документа',
+          'badge': 'Ошибка',
+          'badgeColor': AppColors.error,
+          'badgeBg': const Color(0xFFFFE4E6),
+          'icon': Icons.error_outline_rounded,
+          'iconColor': AppColors.error,
+          'actionLabel': 'Подробнее',
+        });
+      }
+    }
+    return list;
+  }
+
+  void _showNotificationsDialog() {
+    final notifications = _getNotifications();
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final unreadCount = notifications.where((n) => !_readNotificationIds.contains(n['id'])).length;
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Container(
+              width: 520,
+              constraints: const BoxConstraints(maxHeight: 600),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      const Text(
+                        'Уведомления',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: unreadCount > 0 ? AppColors.secondary.withOpacity(0.1) : AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          unreadCount > 0 ? '$unreadCount новых' : 'Все прочитаны',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: unreadCount > 0 ? AppColors.secondary : AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (unreadCount > 0)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              for (final n in notifications) {
+                                _readNotificationIds.add(n['id']);
+                              }
+                            });
+                            setDialogState(() {});
+                          },
+                          child: const Text('Прочитать все', style: TextStyle(fontSize: 12, color: AppColors.secondary)),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.textMuted),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+
+                  // Notifications list
+                  if (notifications.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      alignment: Alignment.center,
+                      child: const Column(
+                        children: [
+                          Icon(Icons.notifications_off_outlined, size: 48, color: AppColors.outline),
+                          SizedBox(height: 12),
+                          Text(
+                            'Новых уведомлений нет',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Здесь будут появляться статусы обработки резюме',
+                            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: notifications.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final item = notifications[index];
+                          final isUnread = !_readNotificationIds.contains(item['id']);
+                          final record = item['cvRecord'] as CVRecord;
+
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                _readNotificationIds.add(item['id']);
+                              });
+                              Navigator.of(ctx).pop();
+                              if (item['type'] == 'ready') {
+                                Navigator.of(this.context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ResultDownloadScreen(record: record),
+                                  ),
+                                );
+                              } else {
+                                Navigator.of(this.context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ValidationScreen(
+                                      cvId: record.cvId,
+                                      initialData: record.jsonData,
+                                    ),
+                                  ),
+                                ).then((_) => _loadCVs());
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: isUnread ? AppColors.secondary.withOpacity(0.04) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: (item['badgeBg'] as Color).withOpacity(0.8),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      item['icon'] as IconData,
+                                      size: 20,
+                                      color: item['iconColor'] as Color,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                item['title'] as String,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: item['badgeBg'] as Color,
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                item['badge'] as String,
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: item['badgeColor'] as Color,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          item['message'] as String,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                            height: 1.3,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          '${item['actionLabel']} →',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.secondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isUnread) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      margin: const EdgeInsets.only(top: 6),
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.secondary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   List<CVRecord> get _filteredCVs {
@@ -353,26 +656,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Right: Notifications, Settings, Profile
           Row(
             children: [
-              // Notification icon with red badge
-              Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications_none_rounded, size: 20, color: AppColors.textSecondary),
-                    onPressed: () {},
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: Container(
-                      width: 7,
-                      height: 7,
-                      decoration: const BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle,
+              // Notification icon with dynamic badge
+              Builder(
+                builder: (context) {
+                  final notifications = _getNotifications();
+                  final unreadCount = notifications.where((n) => !_readNotificationIds.contains(n['id'])).length;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.notifications_none_rounded, size: 20, color: AppColors.textSecondary),
+                        tooltip: 'Уведомления',
+                        onPressed: _showNotificationsDialog,
                       ),
-                    ),
-                  ),
-                ],
+                      if (unreadCount > 0)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                            decoration: BoxDecoration(
+                              color: AppColors.error,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                            child: Text(
+                              unreadCount > 99 ? '99+' : '$unreadCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                height: 1.1,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(width: 8),
 
