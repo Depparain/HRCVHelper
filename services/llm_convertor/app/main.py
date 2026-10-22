@@ -53,11 +53,16 @@ async def health_check():
 
 @app.post("/parse", response_model=ParseResponse)
 async def parse_cv(req: ParseRequest):
-    if not req.markdown.strip():
-        raise HTTPException(status_code=400, detail="Текст Markdown пуст")
+    markdown = (req.markdown or "").strip()
+    if not markdown and req.cv_data:
+        from .parser import reconstruct_markdown_from_cv
+        markdown = reconstruct_markdown_from_cv(req.cv_data)
+
+    if not markdown:
+        raise HTTPException(status_code=400, detail="Текст Markdown или данные резюме не переданы")
 
     cv_data, source = await parse_cv_with_llm(
-        markdown=req.markdown,
+        markdown=markdown,
         filename=req.original_filename,
         force_dynamic=req.force_dynamic,
         rework_comment=req.rework_comment,

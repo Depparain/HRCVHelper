@@ -67,7 +67,8 @@ class CVJsonContract(BaseModel):
 
 
 class ParseRequest(BaseModel):
-    markdown: str
+    markdown: Optional[str] = None
+    cv_data: Optional[Dict[str, Any]] = None
     original_filename: Optional[str] = None
     force_dynamic: bool = False
     rework_comment: Optional[str] = None

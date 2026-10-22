@@ -419,25 +419,12 @@ async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
             cv_record = get_resp.json()
             jsonb_data = cv_record.get("jsonb", {})
 
-            markdown_content = jsonb_data.get("_raw_markdown", "")
+            markdown_content = jsonb_data.get("_raw_markdown")
             filename = jsonb_data.get("_original_filename") or f"cv_{cv_id}.pdf"
-
-            if not markdown_content:
-                fio = jsonb_data.get("fio", "")
-                vac = jsonb_data.get("vacancy", "")
-                skills = ", ".join(jsonb_data.get("skills_and_tools", []))
-                pitch = jsonb_data.get("pitch", "")
-                markdown_content = f"# {fio}\n\nЖелаемая должность: {vac}\n\n## Навыки\n{skills}\n\n## О себе\n{pitch}\n"
-                for p in jsonb_data.get("projects", []):
-                    period = p.get("period", "")
-                    role = p.get("role_in_project", "")
-                    tasks = "\n- ".join(p.get("task_on_project", []))
-                    achieve = "\n- ".join(p.get("achievements_in_project", []))
-                    p_skills = p.get("skills_tools_in_project", "")
-                    markdown_content += f"\n### Проект: {role} ({period})\nЗадачи:\n- {tasks}\nДостижения:\n- {achieve}\nНавыки: {p_skills}\n"
 
             llm_payload = {
                 "markdown": markdown_content,
+                "cv_data": jsonb_data,
                 "original_filename": filename,
                 "rework_comment": rework_comment,
             }

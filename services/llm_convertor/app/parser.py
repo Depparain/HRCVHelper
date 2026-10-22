@@ -897,6 +897,55 @@ def enrich_and_normalize_cv(cv: CVJsonContract, markdown: str, rework_comment: O
     return cv
 
 
+def reconstruct_markdown_from_cv(cv_dict: Dict[str, Any]) -> str:
+    """
+    Реконструирует текстовую Markdown-разметку из структурированного словаря резюме
+    для повторного контекстного промптинга и доработки в LLM (TASK-3.2).
+    """
+    fio = cv_dict.get("fio", "")
+    vac = cv_dict.get("vacancy", "")
+    skills = cv_dict.get("skills_and_tools", [])
+    skills_str = ", ".join(skills) if isinstance(skills, list) else str(skills)
+    pitch = cv_dict.get("pitch", "")
+
+    lines = [f"# {fio}", f"Желаемая должность: {vac}"]
+    if skills_str:
+        lines.extend(["\n## Навыки", skills_str])
+    if pitch:
+        lines.extend(["\n## О себе", pitch])
+
+    education = cv_dict.get("education", [])
+    if education:
+        lines.append("\n## Образование")
+        for edu in education:
+            inst = edu.get("institution", "")
+            spec = edu.get("speciality", "")
+            yr = edu.get("year", "")
+            lines.append(f"- {inst} ({yr}) — {spec}")
+
+    projects = cv_dict.get("projects", [])
+    if projects:
+        lines.append("\n## Опыт работы и проекты")
+        for p in projects:
+            period = p.get("period", "")
+            role = p.get("role_in_project", "")
+            tasks = p.get("task_on_project", [])
+            tasks_str = "\n- ".join(tasks) if isinstance(tasks, list) else str(tasks)
+            achieve = p.get("achievements_in_project", [])
+            achieve_str = "\n- ".join(achieve) if isinstance(achieve, list) else str(achieve)
+            p_skills = p.get("skills_tools_in_project", "")
+
+            lines.append(f"\n### {role} ({period})")
+            if tasks_str:
+                lines.append(f"Задачи:\n- {tasks_str}")
+            if achieve_str:
+                lines.append(f"Достижения:\n- {achieve_str}")
+            if p_skills:
+                lines.append(f"Навыки проекта: {p_skills}")
+
+    return "\n".join(lines).strip()
+
+
 async def check_ollama_health() -> bool:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
