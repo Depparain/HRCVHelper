@@ -22,9 +22,9 @@ class HRCVHelperApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HRCVHelper',
+      title: 'HRHelper — Enterprise CV Suite',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.enterpriseTheme,
       home: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           return auth.isAuthenticated

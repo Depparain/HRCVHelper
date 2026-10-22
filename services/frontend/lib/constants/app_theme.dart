@@ -1,100 +1,159 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color background = Color(0xFF0F172A); // Тёмно-синий фон
-  static const Color surface = Color(0xFF1E293B);    // Карточки и панели
-  static const Color surfaceLight = Color(0xFF334155);
-  static const Color border = Color(0xFF475569);
+  // Brand & Foundation (HR Enterprise Suite)
+  static const Color background = Color(0xFFF8F9FF);           // Calm slate-tinted canvas
+  static const Color surface = Color(0xFFFFFFFF);              // Clean white card surface
+  static const Color surfaceLow = Color(0xFFEFF4FF);           // Subtle container low
+  static const Color surfaceContainer = Color(0xFFE5EEFF);     // Tonal container
+  static const Color surfaceHigh = Color(0xFFDCE9FF);          // Elevated container
+  static const Color surfaceHighest = Color(0xFFD3E4FE);       // High-contrast container
 
-  static const Color primary = Color(0xFF6366F1);    // Индиго/Фиолетовый
-  static const Color primaryHover = Color(0xFF4F46E5);
-  static const Color secondary = Color(0xFF06B6D4);  // Циан
+  static const Color primary = Color(0xFF091426);              // Deep slate navy for headers and titles
+  static const Color primaryContainer = Color(0xFF1E293B);
+  static const Color onPrimary = Color(0xFFFFFFFF);
+  static const Color onPrimaryContainer = Color(0xFF8590A6);
 
-  static const Color textPrimary = Color(0xFFF8FAFC);
-  static const Color textSecondary = Color(0xFF94A3B8);
-  static const Color textMuted = Color(0xFF64748B);
+  static const Color secondary = Color(0xFF0051D5);            // Brand Accent Royal Blue
+  static const Color secondaryContainer = Color(0xFF316BF3);
+  static const Color onSecondary = Color(0xFFFFFFFF);
 
-  static const Color success = Color(0xFF10B981);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color error = Color(0xFFEF4444);
-  static const Color info = Color(0xFF3B82F6);
+  // Typography Colors
+  static const Color textPrimary = Color(0xFF0B1C30);          // High-contrast navy text
+  static const Color textSecondary = Color(0xFF45474C);        // Medium slate text
+  static const Color textMuted = Color(0xFF64748B);            // Secondary / muted slate
+  static const Color outline = Color(0xFF75777D);              // Outline borders / icons
+  static const Color outlineVariant = Color(0xFFE2E8F0);       // Whisper-quiet single-pixel border
+
+  // Semantic Status Badges
+  // 1. Pending HR Validation (Attention Amber)
+  static const Color amberBg = Color(0xFFFFFBEB);
+  static const Color amberBorder = Color(0xFFFDE68A);
+  static const Color amberText = Color(0xFFD97706);
+  static const Color amberAccent = Color(0xFFF59E0B);
+
+  // 2. Ready / Screened (Emerald Green)
+  static const Color emeraldBg = Color(0xFFECFDF5);
+  static const Color emeraldBorder = Color(0xFFA7F3D0);
+  static const Color emeraldText = Color(0xFF059669);
+  static const Color emeraldAccent = Color(0xFF10B981);
+
+  // 3. Intake / Uploaded / In Progress (Royal Blue)
+  static const Color blueBg = Color(0xFFEFF6FF);
+  static const Color blueBorder = Color(0xFFBFDBFE);
+  static const Color blueText = Color(0xFF2563EB);
+
+  // 4. Error / Rejection (Crimson Rose)
+  static const Color roseBg = Color(0xFFFFF1F2);
+  static const Color roseBorder = Color(0xFFFECDD3);
+  static const Color roseText = Color(0xFFE11D48);
+  static const Color error = Color(0xFFBA1A1A);
+  static const Color errorContainer = Color(0xFFFFDAD6);
+  static const Color onErrorContainer = Color(0xFF93000A);
+
+  // 5. LLM / Gemma-3 (Violet Purple)
+  static const Color purpleBg = Color(0xFFFAF5FF);
+  static const Color purpleBorder = Color(0xFFE9D5FF);
+  static const Color purpleText = Color(0xFF7E22CE);
 }
 
 class AppTheme {
-  static ThemeData get darkTheme {
+  static ThemeData get enterpriseTheme {
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: Brightness.light,
       scaffoldBackgroundColor: AppColors.background,
-      colorScheme: const ColorScheme.dark(
+      fontFamily: 'Inter',
+      colorScheme: const ColorScheme.light(
         primary: AppColors.primary,
+        onPrimary: AppColors.onPrimary,
         secondary: AppColors.secondary,
+        onSecondary: AppColors.onSecondary,
         surface: AppColors.surface,
-        background: AppColors.background,
+        onSurface: AppColors.textPrimary,
         error: AppColors.error,
+        background: AppColors.background,
       ),
       cardTheme: CardTheme(
         color: AppColors.surface,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.border, width: 1),
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.outlineVariant, width: 1),
         ),
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.surface,
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
+        scrolledUnderElevation: 1,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          color: AppColors.textPrimary,
+          color: AppColors.primary,
           fontSize: 18,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'Plus Jakarta Sans',
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.background,
+        fillColor: Colors.white,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.outlineVariant, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.outlineVariant, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.secondary, width: 2),
         ),
-        labelStyle: const TextStyle(color: AppColors.textSecondary),
-        hintStyle: const TextStyle(color: AppColors.textMuted),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.error, width: 1),
+        ),
+        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        hintStyle: const TextStyle(color: AppColors.outline, fontSize: 13),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppColors.secondary,
           foregroundColor: Colors.white,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
           textStyle: const TextStyle(
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: FontWeight.w600,
+            fontFamily: 'Inter',
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.textPrimary,
-          side: const BorderSide(color: AppColors.border),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          backgroundColor: Colors.white,
+          side: const BorderSide(color: AppColors.outlineVariant, width: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Inter',
           ),
         ),
       ),
     );
   }
+
+  // Fallback for darkTheme reference
+  static ThemeData get darkTheme => enterpriseTheme;
 }
