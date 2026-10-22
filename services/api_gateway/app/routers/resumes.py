@@ -75,7 +75,7 @@ async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
     """
     log_event("api_gateway", "INFO", f"[CV {cv_id}] Запущен фоновый конвейер пересоздания (доработки) резюме")
     try:
-        cv_record = await db_client.get(cv_id)
+        cv_record = await db_client.get_cv(cv_id)
         if not cv_record:
             log_event("api_gateway", "ERROR", f"[CV {cv_id}] Резюме не найдено при пересоздании")
             await db_client.update_cv_status(cv_id, CVStatus.ERROR.value)
@@ -183,7 +183,7 @@ async def validate_and_generate_docx(
     """
     log_event("api_gateway", "INFO", f"[CV {cv_id}] Получен подтвержденный JSON от HR. Начинаем валидацию и генерацию docx")
 
-    cv_record = await db_client.get(cv_id)
+    cv_record = await db_client.get_cv(cv_id)
     if not cv_record:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
 
@@ -265,7 +265,7 @@ async def get_cv(
     """
     Получение данных резюме, статуса и ссылки на готовый .docx.
     """
-    cv_record = await db_client.get(cv_id)
+    cv_record = await db_client.get_cv(cv_id)
     if not cv_record:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
 
@@ -288,7 +288,7 @@ async def download_cv_docx(
     """
     Скачивание сгенерированного корпоративного документа .docx из S3.
     """
-    cv_record = await db_client.get(cv_id)
+    cv_record = await db_client.get_cv(cv_id)
     if not cv_record:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
 

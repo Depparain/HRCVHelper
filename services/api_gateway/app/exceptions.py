@@ -2,12 +2,24 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from .logger_collector import log_event
 
 logger = logging.getLogger("api_gateway.exceptions")
+
+
+def _cors_headers(request: Request, extra_headers: Optional[dict] = None) -> dict:
+    headers = dict(extra_headers or {})
+    origin = request.headers.get("origin")
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+    return headers
 
 
 def setup_exception_handlers(app: FastAPI):
@@ -24,7 +36,7 @@ def setup_exception_handlers(app: FastAPI):
                 "incident_id": incident_id,
                 "path": request.url.path,
             },
-            headers=exc.headers,
+            headers=_cors_headers(request, exc.headers),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -41,6 +53,7 @@ def setup_exception_handlers(app: FastAPI):
                 "incident_id": incident_id,
                 "path": request.url.path,
             },
+            headers=_cors_headers(request),
         )
 
     @app.exception_handler(Exception)
@@ -57,4 +70,5 @@ def setup_exception_handlers(app: FastAPI):
                 "incident_id": incident_id,
                 "path": request.url.path,
             },
+            headers=_cors_headers(request),
         )

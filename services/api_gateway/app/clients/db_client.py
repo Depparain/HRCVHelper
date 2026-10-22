@@ -36,6 +36,8 @@ class DBClient:
             log_event("api_gateway", "ERROR", f"DBConnector недоступен: {e}")
             raise HTTPException(status_code=503, detail="Сервис базы данных недоступен")
 
+    get = get_cv
+
     async def list_cvs(self, hr_id: Optional[int] = None, skip: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         try:
             params = {"skip": skip, "limit": limit}
