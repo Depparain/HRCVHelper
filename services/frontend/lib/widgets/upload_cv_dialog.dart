@@ -16,10 +16,6 @@ class UploadCVDialog extends StatefulWidget {
 
 class _UploadCVDialogState extends State<UploadCVDialog> {
   PlatformFile? _selectedFile;
-  bool _isUploading = false;
-  double _progressValue = 0.0;
-  String _currentStepText = '';
-  int _activeStepIndex = 0; // 0, 1, 2, 3
   String? _errorMessage;
 
   Future<void> _pickFile() async {
@@ -34,8 +30,6 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
         setState(() {
           _selectedFile = result.files.first;
           _errorMessage = null;
-          _progressValue = 0.0;
-          _activeStepIndex = 0;
         });
       }
     } catch (e) {
@@ -43,62 +37,9 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
     }
   }
 
-  Future<void> _startParsing() async {
-    if (_selectedFile == null || _selectedFile!.bytes == null) return;
-
-    setState(() {
-      _isUploading = true;
-      _errorMessage = null;
-      _activeStepIndex = 1;
-      _progressValue = 0.25;
-      _currentStepText = 'Загрузка файла во временное хранилище...';
-    });
-
-    try {
-      // Имитируем прогресс пайплайна для визуального отклика
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted && _isUploading) {
-          setState(() {
-            _activeStepIndex = 2;
-            _progressValue = 0.60;
-            _currentStepText = 'Извлечение текста и нормализация разметки (MarkItDown)...';
-          });
-        }
-      });
-
-      Future.delayed(const Duration(milliseconds: 1200), () {
-        if (mounted && _isUploading) {
-          setState(() {
-            _activeStepIndex = 3;
-            _progressValue = 0.85;
-            _currentStepText = 'Структурирование моделью Gemma-3 (152-ФЗ)...';
-          });
-        }
-      });
-
-      final record = await apiService.uploadCV(
-        _selectedFile!.bytes!,
-        _selectedFile!.name,
-        widget.hrId,
-      );
-
-      if (mounted) {
-        setState(() {
-          _progressValue = 1.0;
-          _activeStepIndex = 4;
-          _currentStepText = 'Готово! Переход к валидации HR...';
-          _isUploading = false;
-        });
-
-        Navigator.of(context).pop(record);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
-        });
-      }
+  void _submit() {
+    if (_selectedFile != null && _selectedFile!.bytes != null) {
+      Navigator.of(context).pop(_selectedFile);
     }
   }
 
@@ -177,7 +118,7 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
                     ),
                   ),
                   IconButton(
-                    onPressed: _isUploading ? null : () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close, size: 20, color: AppColors.textMuted),
                     style: IconButton.styleFrom(
                       backgroundColor: AppColors.surfaceLow,
@@ -197,7 +138,7 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
                 children: [
                   // Dropzone Card
                   InkWell(
-                    onTap: _isUploading ? null : _pickFile,
+                    onTap: _pickFile,
                     borderRadius: BorderRadius.circular(16),
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
@@ -361,7 +302,6 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
                                   ],
                                 ),
                               ),
-                              if (!_isUploading)
                                 IconButton(
                                   onPressed: () => setState(() => _selectedFile = null),
                                   icon: const Icon(
@@ -373,42 +313,6 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
                                 ),
                             ],
                           ),
-
-                          // Progress bar if uploading
-                          if (_isUploading) ...[
-                            const SizedBox(height: 14),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.between,
-                              children: [
-                                Text(
-                                  _currentStepText,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                Text(
-                                  '${(_progressValue * 100).toInt()}%',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.secondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(9999),
-                              child: LinearProgressIndicator(
-                                value: _progressValue,
-                                minHeight: 6,
-                                backgroundColor: AppColors.surfaceContainer,
-                                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.secondary),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
@@ -498,23 +402,14 @@ class _UploadCVDialogState extends State<UploadCVDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   OutlinedButton(
-                    onPressed: _isUploading ? null : () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Отмена'),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    onPressed: (_selectedFile == null || _isUploading) ? null : _startParsing,
-                    icon: _isUploading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.play_arrow_rounded, size: 18),
-                    label: Text(_isUploading ? 'Обработка...' : 'Начать парсинг'),
+                    onPressed: _selectedFile == null ? null : _submit,
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('Начать парсинг'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.secondary,
                       foregroundColor: Colors.white,

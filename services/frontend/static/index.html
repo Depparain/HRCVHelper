@@ -75,19 +75,12 @@
         <div class="h-6 w-px bg-outline-variant"></div>
         <nav class="flex items-center gap-5 text-sm font-medium">
           <button id="nav-cv" class="py-5 text-secondary border-b-2 border-secondary font-semibold" onclick="showDashboard()">CVHelper</button>
-          <button id="nav-search" class="py-5 text-text-muted hover:text-text-primary transition-colors">SearchHelper</button>
-          <button id="nav-superhr" class="py-5 text-text-muted hover:text-text-primary transition-colors">SuperHR</button>
           <button id="nav-admin" class="py-5 text-text-muted hover:text-text-primary transition-colors" onclick="showAdmin()">Контур Админа / Мониторинг</button>
         </nav>
       </div>
 
-      <!-- Right: Search, Notifications, User Profile -->
+      <!-- Right: Notifications, User Profile -->
       <div class="flex items-center gap-4">
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-low text-text-muted text-xs">
-          <span class="material-symbols-outlined text-[16px]">search</span>
-          <span>Поиск...</span>
-          <kbd class="ml-1 px-1.5 py-0.5 rounded bg-white font-mono text-[10px] text-outline">⌘K</kbd>
-        </div>
         <button class="relative p-2 rounded-full hover:bg-surface-low text-text-muted transition-colors">
           <span class="material-symbols-outlined text-[20px]">notifications</span>
           <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-roseText"></span>
@@ -213,6 +206,23 @@
             <span>Обновить</span>
           </button>
         </div>
+      </div>
+
+      <!-- Live Processing Banner (appears when upload is submitted) -->
+      <div id="processing-banner" class="hidden p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-secondary text-white flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[20px] animate-spin">sync</span>
+          </div>
+          <div>
+            <h4 class="text-xs font-bold text-secondary flex items-center gap-1.5">
+              <span>Идет фоновая обработка файла:</span>
+              <span id="processing-filename" class="font-mono text-primary font-bold">Резюме.pdf</span>
+            </h4>
+            <p class="text-[11px] text-text-muted">Файл конвертируется и анализируется моделью Gemma-3. Вы можете продолжать работу с реестром.</p>
+          </div>
+        </div>
+        <span class="text-[11px] font-semibold text-secondary animate-pulse shrink-0">В процессе (шаг 2/3)</span>
       </div>
 
       <!-- Page Header & Main Actions -->
@@ -829,17 +839,6 @@
               <span class="material-symbols-outlined text-[18px]">delete</span>
             </button>
           </div>
-
-          <!-- Progress bar -->
-          <div id="upload-progress-container" class="hidden flex flex-col gap-1.5">
-            <div class="flex justify-between text-xs text-text-muted">
-              <span id="upload-step-title">1/3: Загрузка и конвертация в Markdown...</span>
-              <span id="upload-pct-label" class="font-bold text-secondary">0%</span>
-            </div>
-            <div class="w-full h-1.5 rounded-full bg-surface-container overflow-hidden">
-              <div id="upload-progress-bar" class="h-full bg-secondary rounded-full transition-all duration-300" style="width: 0%;"></div>
-            </div>
-          </div>
         </div>
 
         <!-- Pipeline Steps preview -->
@@ -894,6 +893,7 @@
     let activeCvJson = null;
     let adminInterval = null;
     let adminAutoRefresh = true;
+    let dashboardPollInterval = null;
 
     // Инициализация при загрузке
     window.addEventListener('DOMContentLoaded', () => {
@@ -961,6 +961,7 @@
       localStorage.removeItem('hrcv_token');
       localStorage.removeItem('hrcv_user');
       if (adminInterval) clearInterval(adminInterval);
+      if (dashboardPollInterval) clearInterval(dashboardPollInterval);
       showLogin();
     }
 
@@ -991,6 +992,15 @@
         document.getElementById('user-avatar').textContent = initials;
       }
       loadCVs();
+
+      // Начать автоопрос каждые 4 секунды если есть активные обработки
+      if (!dashboardPollInterval) {
+        dashboardPollInterval = setInterval(() => {
+          if (!document.getElementById('view-dashboard').classList.contains('hidden')) {
+            loadCVs(true);
+          }
+        }, 4000);
+      }
     }
 
     function showAdmin() {
@@ -1005,8 +1015,9 @@
     }
 
     function updateNavActive(activeId) {
-      ['nav-cv', 'nav-search', 'nav-superhr', 'nav-admin'].forEach(id => {
+      ['nav-cv', 'nav-admin'].forEach(id => {
         const el = document.getElementById(id);
+        if (!el) return;
         if (id === activeId) {
           el.className = 'py-5 text-secondary border-b-2 border-secondary font-semibold';
         } else {
@@ -1017,7 +1028,7 @@
 
     // --- DASHBOARD & CV REGISTRY LOGIC ---
 
-    async function loadCVs() {
+    async function loadCVs(silent = false) {
       try {
         const hrId = currentUser ? currentUser.hr_id : '';
         const resp = await fetch(`${API_BASE}/api/v1/cv${hrId ? '?hr_id=' + hrId : ''}`, {
@@ -1027,9 +1038,19 @@
           cvList = await resp.json();
           updateMetrics();
           renderCVTable();
+
+          // Проверяем, есть ли незаконченные обработки для баннера
+          const inProgress = cvList.filter(c => c.status === 'Загружено' || c.status.includes('Обработ') || c.status.includes('Конверт'));
+          const banner = document.getElementById('processing-banner');
+          if (inProgress.length > 0) {
+            banner.classList.remove('hidden');
+            document.getElementById('processing-filename').textContent = inProgress[0].jsonb?.fio || 'Резюме.pdf';
+          } else {
+            banner.classList.add('hidden');
+          }
         }
       } catch (e) {
-        console.error('Ошибка загрузки списка резюме:', e);
+        if (!silent) console.error('Ошибка загрузки списка резюме:', e);
       }
     }
 
@@ -1037,7 +1058,7 @@
       const total = cvList.length;
       const pending = cvList.filter(c => c.status === 'Ожидает проверки HR').length;
       const ready = cvList.filter(c => c.status === 'Готово').length;
-      const loaded = cvList.filter(c => c.status === 'Загружено' || c.status.includes('Обработ')).length;
+      const loaded = cvList.filter(c => c.status === 'Загружено' || c.status.includes('Обработ') || c.status.includes('Конверт')).length;
       const err = cvList.filter(c => c.status.includes('Ошибк')).length;
 
       document.getElementById('metric-total').textContent = total;
@@ -1071,7 +1092,8 @@
       const sort = document.getElementById('cv-sort').value;
 
       let items = cvList.filter(c => {
-        if (currentTab === 'Загружено' && c.status !== 'Загружено') return false;
+        // Tab filter: 'Загружено' includes any intake/in-progress status
+        if (currentTab === 'Загружено' && !(c.status === 'Загружено' || c.status.includes('Обработ') || c.status.includes('Конверт'))) return false;
         if (currentTab === 'Ожидает проверки HR' && c.status !== 'Ожидает проверки HR') return false;
         if (currentTab === 'Готово' && c.status !== 'Готово') return false;
         if (currentTab === 'Ошибка' && !c.status.includes('Ошибк')) return false;
@@ -1089,7 +1111,7 @@
       });
 
       if (sort === 'oldest') {
-        items = items.reverse();
+        items = [...items].reverse();
       }
 
       if (items.length === 0) {
@@ -1111,7 +1133,9 @@
         const initials = fio.split(' ').map(s => s[0]).slice(0, 2).join('') || 'CV';
 
         let badgeBg = 'bg-blue-50 text-secondary border-blue-200';
-        let badgeDot = 'bg-secondary';
+        let badgeDot = 'bg-secondary animate-pulse';
+        let isProcessing = false;
+
         if (c.status === 'Готово') {
           badgeBg = 'bg-emeraldBg text-emeraldText border-emeraldBorder';
           badgeDot = 'bg-emeraldAccent';
@@ -1121,6 +1145,9 @@
         } else if (c.status.includes('Ошибк')) {
           badgeBg = 'bg-roseBg text-roseText border-roseBorder';
           badgeDot = 'bg-roseText';
+        } else {
+          // In progress (Загружено / Конвертация в MD / Обработка резюме)
+          isProcessing = true;
         }
 
         let actionBtn = '';
@@ -1137,6 +1164,13 @@
               <span class="material-symbols-outlined text-[15px]">download</span>
               <span>.docx</span>
             </button>
+          `;
+        } else if (isProcessing) {
+          actionBtn = `
+            <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary">
+              <span class="material-symbols-outlined text-[14px] animate-spin">sync</span>
+              <span>Обработка...</span>
+            </span>
           `;
         } else {
           actionBtn = `
@@ -1155,7 +1189,7 @@
                   ${initials}
                 </div>
                 <div class="flex flex-col">
-                  <span class="font-bold text-primary hover:text-secondary cursor-pointer" onclick="openValidationPage(${c.cv_id})">${fio}</span>
+                  <span class="font-bold text-primary ${!isProcessing ? 'hover:text-secondary cursor-pointer' : ''}" onclick="${!isProcessing ? `openValidationPage(${c.cv_id})` : ''}">${fio}</span>
                   <span class="text-[11px] text-text-muted">${vac}${exp ? ' • ' + exp : ''}</span>
                 </div>
               </div>
@@ -1189,7 +1223,6 @@
       selectedUploadFile = null;
       document.getElementById('file-upload-input').value = '';
       document.getElementById('upload-file-status').classList.add('hidden');
-      document.getElementById('upload-progress-container').classList.add('hidden');
       document.getElementById('btn-start-upload').disabled = true;
       document.getElementById('modal-upload').classList.remove('hidden');
     }
@@ -1218,34 +1251,25 @@
     async function startFileUpload() {
       if (!selectedUploadFile) return;
 
-      const btn = document.getElementById('btn-start-upload');
-      btn.disabled = true;
-      document.getElementById('upload-progress-container').classList.remove('hidden');
+      const fileToUpload = selectedUploadFile;
+      const fileName = fileToUpload.name;
 
-      const pBar = document.getElementById('upload-progress-bar');
-      const pStep = document.getElementById('upload-step-title');
-      const pPct = document.getElementById('upload-pct-label');
+      // 1. Немедленно закрываем модальное окно, чтобы не блокировать интерфейс
+      closeUploadModal();
 
-      pBar.style.width = '30%';
-      pPct.textContent = '30%';
-      pStep.textContent = '1/3: Загрузка файла и стриминг...';
+      // 2. Показываем плашку фоновой обработки на дашборде
+      const banner = document.getElementById('processing-banner');
+      banner.classList.remove('hidden');
+      document.getElementById('processing-filename').textContent = fileName;
 
-      setTimeout(() => {
-        pBar.style.width = '65%';
-        pPct.textContent = '65%';
-        pStep.textContent = '2/3: Извлечение текста (MarkItDown)...';
-      }, 600);
-
-      setTimeout(() => {
-        pBar.style.width = '85%';
-        pPct.textContent = '85%';
-        pStep.textContent = '3/3: Структурирование Gemma-3 (152-ФЗ)...';
-      }, 1400);
+      // 3. Отправляем запрос на сервер в фоне
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('hr_id', currentUser ? currentUser.hr_id : '1');
 
       try {
-        const formData = new FormData();
-        formData.append('file', selectedUploadFile);
-        formData.append('hr_id', currentUser ? currentUser.hr_id : '1');
+        // Запускаем быстрое автообновление дашборда
+        setTimeout(loadCVs, 500);
 
         const resp = await fetch(`${API_BASE}/api/v1/cv/upload`, {
           method: 'POST',
@@ -1259,19 +1283,13 @@
         }
 
         const newCv = await resp.json();
-        pBar.style.width = '100%';
-        pPct.textContent = '100%';
-        pStep.textContent = 'Завершено! Переход к валидации...';
-
-        setTimeout(() => {
-          closeUploadModal();
-          loadCVs();
-          openValidationPage(newCv.cv_id);
-        }, 500);
-
+        // Обновляем список, чтобы появилось состояние 'Ожидает проверки HR'
+        await loadCVs();
       } catch (err) {
-        alert('Ошибка: ' + err.message);
-        btn.disabled = false;
+        console.error('Ошибка фоновой загрузки:', err);
+        alert('Ошибка при обработке резюме ' + fileName + ': ' + err.message);
+      } finally {
+        loadCVs();
       }
     }
 

@@ -124,9 +124,16 @@ async def upload_cv(
     async with httpx.AsyncClient(timeout=360.0) as client:
         # 1. Фиксация начального состояния в БД: "Загружено"
         try:
+            clean_name = filename.rsplit(".", 1)[0].replace("_", " ")
             init_cv_payload = {
                 "hr_id": effective_hr_id,
-                "jsonb": {},
+                "jsonb": {
+                    "fio": clean_name,
+                    "vacancy": "ИИ-структурирование резюме...",
+                    "skills_and_tools": [],
+                    "education": [],
+                    "projects": []
+                },
                 "status": "Загружено",
             }
             create_resp = await client.post(f"{settings.db_connector_url}/cv", json=init_cv_payload)

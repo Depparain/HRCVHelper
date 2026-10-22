@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../constants/app_theme.dart';
 import '../models/cv_model.dart';
@@ -26,10 +28,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _selectedRoleFilter = 'all';
   String _sortOrder = 'newest';
 
+  Timer? _pollingTimer;
+  bool _isUploadingBackground = false;
+  String? _uploadingFileName;
+
   @override
   void initState() {
     super.initState();
     _loadCVs();
+    _startPolling();
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) {
+        final hasProcessing = _allCVs.any((c) =>
+            c.status == 'Загружено' ||
+            c.status.contains('Обработ') ||
+            c.status.contains('Конверт'));
+        if (hasProcessing || _isUploadingBackground) {
+          _silentRefreshCVs();
+        }
+      }
+    });
+  }
+
+  Future<void> _silentRefreshCVs() async {
+    try {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final cvs = await apiService.listCVs(hrId: auth.currentUser?.hrId);
+      if (mounted) {
+        setState(() {
+          _allCVs = cvs;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadCVs() async {
@@ -53,30 +93,105 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final hrId = auth.currentUser?.hrId ?? 1;
 
-    final record = await showDialog<CVRecord>(
+    final selectedFile = await showDialog<PlatformFile>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (_) => UploadCVDialog(hrId: hrId),
     );
 
-    if (record != null && mounted) {
-      await _loadCVs();
-      // Navigate to validation screen
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ValidationScreen(
-            cvId: record.cvId,
-            initialData: record.jsonData,
-          ),
+    if (selectedFile != null && selectedFile.bytes != null && mounted) {
+      _startBackgroundUpload(selectedFile, hrId);
+    }
+  }
+
+  Future<void> _startBackgroundUpload(PlatformFile file, int hrId) async {
+    setState(() {
+      _isUploadingBackground = true;
+      _uploadingFileName = file.name;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text('Файл "${file.name}" передан в пайплайн обработки')),
+          ],
         ),
-      ).then((_) => _loadCVs());
+        duration: const Duration(seconds: 4),
+      ),
+    );
+
+    // Initial rapid refresh to pick up the inserted "Загружено" state in DB
+    Future.delayed(const Duration(milliseconds: 500), () => _silentRefreshCVs());
+
+    try {
+      final record = await apiService.uploadCV(
+        file.bytes!,
+        file.name,
+        hrId,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isUploadingBackground = false;
+          _uploadingFileName = null;
+        });
+        await _silentRefreshCVs();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Резюме "${file.name}" успешно обработано и готово к проверке!'),
+            backgroundColor: AppColors.secondary,
+            action: SnackBarAction(
+              label: 'Проверить',
+              textColor: Colors.white,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ValidationScreen(
+                      cvId: record.cvId,
+                      initialData: record.jsonData,
+                    ),
+                  ),
+                ).then((_) => _loadCVs());
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isUploadingBackground = false;
+          _uploadingFileName = null;
+        });
+        await _silentRefreshCVs();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка обработки "${file.name}": $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
   List<CVRecord> get _filteredCVs {
     return _allCVs.where((cv) {
-      // Tab filter
-      if (_selectedFilterTab == 'Загружено' && cv.status != 'Загружено') return false;
+      // Tab filter: 'Загружено' includes initial upload and in-progress states
+      if (_selectedFilterTab == 'Загружено' &&
+          cv.status != 'Загружено' &&
+          !cv.status.contains('Обработ') &&
+          !cv.status.contains('Конверт')) {
+        return false;
+      }
       if (_selectedFilterTab == 'Ожидает проверки HR' && cv.status != 'Ожидает проверки HR') return false;
       if (_selectedFilterTab == 'Готово' && cv.status != 'Готово') return false;
       if (_selectedFilterTab == 'Ошибка парсинга' && !cv.status.contains('Ошибк')) return false;
@@ -147,6 +262,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _buildHeaderSection(),
                       const SizedBox(height: 24),
 
+                      // Processing Banner (if files uploading or in progress)
+                      _buildProcessingBanner(),
+
                       // 4 Summary Bento Metric Cards
                       _buildBentoMetricsGrid(),
                       const SizedBox(height: 24),
@@ -210,11 +328,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               // Module Links
               _buildNavModuleLink('CVHelper', isActive: true),
-              const SizedBox(width: 18),
-              _buildNavModuleLink('SearchHelper', isActive: false),
-              const SizedBox(width: 18),
-              _buildNavModuleLink('SuperHR', isActive: false),
-              const SizedBox(width: 18),
+              const SizedBox(width: 24),
               InkWell(
                 onTap: () {
                   Navigator.of(context).push(
@@ -236,28 +350,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
 
-          // Right: Search, Notifications, Settings, Profile
+          // Right: Notifications, Settings, Profile
           Row(
             children: [
-              // Search shortcut pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceLow,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.search, size: 16, color: AppColors.textMuted),
-                    SizedBox(width: 6),
-                    Text('Поиск...', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                    SizedBox(width: 8),
-                    Text('⌘K', style: TextStyle(fontSize: 10, color: AppColors.outline, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-
               // Notification icon with red badge
               Stack(
                 children: [
@@ -463,6 +558,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildProcessingBanner() {
+    final activeCount = _allCVs.where((c) =>
+        c.status == 'Загружено' ||
+        c.status.contains('Обработ') ||
+        c.status.contains('Конверт')).length;
+
+    if (!_isUploadingBackground && activeCount == 0) {
+      return const SizedBox.shrink();
+    }
+
+    final displayName = _uploadingFileName ?? 'резюме кандидата';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF93C5FD)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: AppColors.secondary,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Идет фоновая обработка резюме: $displayName',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Документ проходит этапы MarkItDown -> извлечение структуры моделью Gemma-3 (152-ФЗ). Вы можете продолжать работу с реестром, статус обновится автоматически.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.sync_rounded, size: 14, color: AppColors.secondary),
+                SizedBox(width: 6),
+                Text(
+                  'Автообновление (4с)',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.secondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -953,6 +1126,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                   textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              )
+                            else if (cv.status == 'Загружено' ||
+                                cv.status.contains('Обработ') ||
+                                cv.status.contains('Конверт'))
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceLow,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.outlineVariant),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.secondary),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Обработка...',
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.secondary),
+                                    ),
+                                  ],
                                 ),
                               )
                             else
