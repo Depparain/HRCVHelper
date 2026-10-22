@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
 from urllib.parse import quote
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Depends, Header, Query, Response, status
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Depends, Header, Query, Response, status, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -194,65 +194,32 @@ async def login(req: LoginRequest):
         raise HTTPException(status_code=503, detail="Сервис авторизации временно недоступен")
 
 
-@app.post("/api/v1/cv/upload", response_model=CVUploadResponse)
-async def upload_cv(
-    file: UploadFile = File(...),
-    hr_id: Optional[int] = Form(None),
-    current_user: Dict[str, Any] = Depends(get_current_user),
-):
+async def run_upload_pipeline(cv_id: int, effective_hr_id: int, filename: str, file_bytes: bytes):
     """
-    ФТ-HR.2: Загрузка исходного файла CV, конвертация в MD, семантический парсинг
-    через Gemma-3 и возврат JSON-черновика со статусом 'Ожидает проверки HR'.
+    Фоновый конвейер обработки загруженного резюме (TASK-3.1):
+    1. Перевод в статус 'Конвертация в MD' и вызов MDConvertor.
+    2. Перевод в статус 'Обработка резюме' и вызов LLMConvertor.
+    3. Сохранение распарсенного JSONB и перевод в статус 'Ожидает проверки HR'.
+    При любом сбое статус надежно переводится в 'Ошибка парсинга'.
     """
-    filename = file.filename or "cv_document"
-    effective_hr_id = hr_id or current_user.get("hr_id")
-
-    log_event("api_gateway", "INFO", f"Начало обработки резюме '{filename}' от HR_ID={effective_hr_id}")
-
-    file_bytes = await file.read()
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="Файл резюме пуст")
-
+    log_event("api_gateway", "INFO", f"[CV {cv_id}] Запуск фонового конвейера обработки для файла '{filename}'")
     async with httpx.AsyncClient(timeout=360.0) as client:
-        # 1. Фиксация начального состояния в БД: "Загружено"
         try:
-            clean_name = filename.rsplit(".", 1)[0].replace("_", " ")
-            init_cv_payload = {
-                "hr_id": effective_hr_id,
-                "jsonb": {
-                    "fio": clean_name,
-                    "vacancy": "ИИ-структурирование резюме...",
-                    "skills_and_tools": [],
-                    "education": [],
-                    "projects": []
-                },
-                "status": CVStatus.UPLOADED.value,
-            }
-            create_resp = await client.post(f"{settings.db_connector_url}/cv", json=init_cv_payload)
-            if create_resp.status_code != 201:
-                raise HTTPException(status_code=500, detail="Не удалось создать запись CV в БД")
-            cv_record = create_resp.json()
-            cv_id = cv_record["cv_id"]
-        except httpx.RequestError as e:
-            log_event("api_gateway", "ERROR", f"DBConnector недоступен: {e}")
-            raise HTTPException(status_code=503, detail="Сервис базы данных недоступен")
-
-        try:
-            # 2. Переход: "Конвертация в MD"
+            # 1. Переход: "Конвертация в MD"
             log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.MD_CONVERSION.value}")
             await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.MD_CONVERSION.value})
 
             try:
-                files = {"file": (filename, io.BytesIO(file_bytes), file.content_type or "application/octet-stream")}
+                files = {"file": (filename, io.BytesIO(file_bytes), "application/octet-stream")}
                 md_resp = await client.post(f"{settings.md_convertor_url}/convert", files=files)
                 if md_resp.status_code != 200:
-                    raise HTTPException(status_code=md_resp.status_code, detail=f"Ошибка конвертации в Markdown: {md_resp.text}")
+                    raise RuntimeError(f"Ошибка конвертации в Markdown: {md_resp.text}")
                 markdown_content = md_resp.json().get("markdown", "")
             except httpx.RequestError as e:
                 log_event("api_gateway", "ERROR", f"MDConvertor недоступен: {e}")
-                raise HTTPException(status_code=503, detail="Сервис MDConvertor недоступен")
+                raise RuntimeError(f"Сервис MDConvertor недоступен: {e}")
 
-            # 3. Переход: "Обработка резюме" (LLM Gemma-3)
+            # 2. Переход: "Обработка резюме" (LLM Gemma-3)
             log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.LLM_PROCESSING.value} (Gemma-3)")
             await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.LLM_PROCESSING.value})
 
@@ -260,39 +227,97 @@ async def upload_cv(
                 llm_payload = {"markdown": markdown_content, "original_filename": filename}
                 llm_resp = await client.post(f"{settings.llm_convertor_url}/parse", json=llm_payload)
                 if llm_resp.status_code != 200:
-                    raise HTTPException(status_code=llm_resp.status_code, detail=f"Ошибка парсинга LLM: {llm_resp.text}")
+                    raise RuntimeError(f"Ошибка парсинга LLM: {llm_resp.text}")
                 parsed_data = llm_resp.json().get("data", {})
                 parsed_data["_raw_markdown"] = markdown_content
                 parsed_data["_original_filename"] = filename
             except httpx.RequestError as e:
                 log_event("api_gateway", "ERROR", f"LLMConvertor недоступен: {e}")
-                raise HTTPException(status_code=503, detail="Сервис LLMConvertor недоступен")
+                raise RuntimeError(f"Сервис LLMConvertor недоступен: {e}")
 
-            # 4. Переход: "Ожидает проверки HR" и сохранение черновика JSONB
-            log_event("api_gateway", "INFO", f"[CV {cv_id}] Парсинг завершен. Переход в статус: {CVStatus.AWAITING_HR.value}")
+            # 3. Переход: "Ожидает проверки HR" и сохранение структурированного JSONB
+            log_event("api_gateway", "INFO", f"[CV {cv_id}] Парсинг успешно завершен. Переход в статус: {CVStatus.AWAITING_HR.value}")
             update_payload = {
                 "jsonb": parsed_data,
                 "status": CVStatus.AWAITING_HR.value,
             }
             update_resp = await client.put(f"{settings.db_connector_url}/cv/{cv_id}", json=update_payload)
             if update_resp.status_code != 200:
-                raise HTTPException(status_code=500, detail="Не удалось сохранить распарсенный JSON в БД")
+                raise RuntimeError(f"Не удалось сохранить распарсенный JSON в БД: {update_resp.text}")
 
-            return CVUploadResponse(
-                cv_id=cv_id,
-                hr_id=effective_hr_id,
-                status=CVStatus.AWAITING_HR.value,
-                data=parsed_data,
-                filename=filename,
-            )
         except Exception as e:
-            logger.exception("[CV %s] Ошибка в конвейере обработки резюме: %s", cv_id, e)
-            log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка обработки резюме: {e}")
+            logger.exception("[CV %s] Ошибка в фоновом конвейере обработки: %s", cv_id, e)
+            log_event("api_gateway", "ERROR", f"[CV {cv_id}] Сбой обработки резюме: {e}")
             try:
                 await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.ERROR.value})
             except Exception as update_err:
-                logger.error("[CV %s] Не удалось выставить статус ошибки: %s", cv_id, update_err, exc_info=True)
-            raise
+                logger.error("[CV %s] Не удалось перевести резюме в статус ошибки: %s", cv_id, update_err, exc_info=True)
+
+
+@app.post("/api/v1/cv/upload", response_model=CVUploadResponse, status_code=status.HTTP_200_OK)
+async def upload_cv(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    hr_id: Optional[int] = Form(None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    ФТ-HR.2: Неблокирующая загрузка CV. Валидирует файл, создает черновик в БД
+    в начальном статусе 'Загружено', запускает асинхронный пайплайн в фоновом режиме
+    и мгновенно возвращает ответ клиенту (HTTP 200/202).
+    """
+    filename = file.filename or "cv_document"
+    effective_hr_id = hr_id or current_user.get("hr_id")
+
+    log_event("api_gateway", "INFO", f"Принят запрос на загрузку резюме '{filename}' от HR_ID={effective_hr_id}")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Файл резюме пуст")
+
+    # 1. Фиксация начального состояния в БД: "Загружено"
+    clean_name = filename.rsplit(".", 1)[0].replace("_", " ")
+    init_jsonb = {
+        "fio": clean_name,
+        "vacancy": "ИИ-структурирование резюме...",
+        "skills_and_tools": [],
+        "education": [],
+        "projects": [],
+    }
+    init_cv_payload = {
+        "hr_id": effective_hr_id,
+        "jsonb": init_jsonb,
+        "status": CVStatus.UPLOADED.value,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            create_resp = await client.post(f"{settings.db_connector_url}/cv", json=init_cv_payload)
+            if create_resp.status_code != 201:
+                raise HTTPException(status_code=500, detail="Не удалось создать запись CV в БД")
+            cv_record = create_resp.json()
+            cv_id = cv_record["cv_id"]
+    except httpx.RequestError as e:
+        log_event("api_gateway", "ERROR", f"DBConnector недоступен: {e}")
+        raise HTTPException(status_code=503, detail="Сервис базы данных недоступен")
+
+    # 2. Ставим тяжелый конвейер в BackgroundTasks
+    background_tasks.add_task(
+        run_upload_pipeline,
+        cv_id=cv_id,
+        effective_hr_id=effective_hr_id,
+        filename=filename,
+        file_bytes=file_bytes,
+    )
+
+    log_event("api_gateway", "INFO", f"[CV {cv_id}] Запись создана в статусе '{CVStatus.UPLOADED.value}'. Фоновая обработка запланирована.")
+    return CVUploadResponse(
+        cv_id=cv_id,
+        hr_id=effective_hr_id,
+        status=CVStatus.UPLOADED.value,
+        data=init_jsonb,
+        filename=filename,
+    )
 
 
 @app.put("/api/v1/cv/{cv_id}/validate", response_model=CVValidateResponse)
