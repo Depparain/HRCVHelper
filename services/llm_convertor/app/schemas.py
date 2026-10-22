@@ -70,6 +70,7 @@ class ParseRequest(BaseModel):
     markdown: str
     original_filename: Optional[str] = None
     force_dynamic: bool = False
+    rework_comment: Optional[str] = None
 
 
 class ParseResponse(BaseModel):

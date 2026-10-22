@@ -52,6 +52,10 @@ class CVDetailResponse(BaseModel):
     download_url: Optional[str] = None
 
 
+class ReworkRequest(BaseModel):
+    comment: Optional[str] = None
+
+
 # --- Admin ---
 
 class LogEntry(BaseModel):

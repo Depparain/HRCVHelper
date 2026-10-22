@@ -105,10 +105,11 @@ class ApiService {
 
   // --- Возврат резюме на доработку ---
 
-  Future<void> returnForRework(int cvId) async {
+  Future<void> returnForRework(int cvId, {String? comment}) async {
     final response = await http.put(
       Uri.parse('${ApiConstants.baseUrl}/api/v1/cv/$cvId/rework'),
       headers: _headers,
+      body: jsonEncode({'comment': comment ?? ''}),
     );
     if (response.statusCode != 200) {
       String errorMsg = 'Не удалось вернуть резюме на доработку';

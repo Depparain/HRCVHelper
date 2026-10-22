@@ -126,20 +126,132 @@ class _ValidationScreenState extends State<ValidationScreen> {
     }
   }
 
-  Future<void> _returnForRework() async {
+  Future<void> _openReworkDialog() async {
+    final commentController = TextEditingController();
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.roseBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.assignment_return_rounded, color: AppColors.error, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Возврат на доработку',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primary),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Опишите замечания и требования для повторной обработки резюме моделью Gemma-3:',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: commentController,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    hintText: 'Например: добавить навык Docker, пересчитать стаж до 7 лет, удалить лишние фразы из pitch...',
+                    hintStyle: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    filled: true,
+                    fillColor: AppColors.surfaceLow,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.outlineVariant),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Быстрые шаблоны:',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    ActionChip(
+                      label: const Text('+ Дополнить стек', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        final cur = commentController.text.trim();
+                        commentController.text = cur.isEmpty ? 'Дополнить стек технологий из текста проектов.' : '$cur Дополнить стек технологий.';
+                      },
+                    ),
+                    ActionChip(
+                      label: const Text('+ Исправить стаж', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        final cur = commentController.text.trim();
+                        commentController.text = cur.isEmpty ? 'Скорректировать общий стаж и даты проектов.' : '$cur Скорректировать общий стаж.';
+                      },
+                    ),
+                    ActionChip(
+                      label: const Text('+ Саммари без «Я»', style: TextStyle(fontSize: 11)),
+                      onPressed: () {
+                        final cur = commentController.text.trim();
+                        commentController.text = cur.isEmpty ? 'Переписать Elevator Pitch без первого лица (без «Я»).' : '$cur Переписать pitch от 3-го лица.';
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop(null),
+              child: const Text('Отмена'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.of(ctx).pop(commentController.text.trim()),
+              icon: const Icon(Icons.undo_rounded, size: 16),
+              label: const Text('Вернуть на доработку'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      _returnForRework(comment: result);
+    }
+  }
+
+  Future<void> _returnForRework({String? comment}) async {
     setState(() {
       _isSaving = true;
       _errorMessage = null;
     });
 
     try {
-      await apiService.returnForRework(widget.cvId);
+      await apiService.returnForRework(widget.cvId, comment: comment);
       if (mounted) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Резюме #${widget.cvId} возвращено на доработку (статус: Обработка резюме)'),
-            backgroundColor: AppColors.error,
+            content: Text('Резюме #${widget.cvId} отправлено на повторную обработку моделью Gemma-3'),
+            backgroundColor: AppColors.secondary,
           ),
         );
         Navigator.of(context).pop();
@@ -297,6 +409,9 @@ class _ValidationScreenState extends State<ValidationScreen> {
                       // Gemma Insight Banner
                       _buildInsightBanner(),
                       const SizedBox(height: 20),
+
+                      // Rework Notice Banner if any
+                      _buildReworkNoticeBanner(),
 
                       // Error message if any
                       if (_errorMessage != null) ...[
@@ -477,7 +592,7 @@ class _ValidationScreenState extends State<ValidationScreen> {
               Row(
                 children: [
                   OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _returnForRework,
+                    onPressed: _isSaving ? null : _openReworkDialog,
                     icon: const Icon(Icons.undo_rounded, size: 16, color: AppColors.error),
                     label: const Text('Вернуть на доработку', style: TextStyle(color: AppColors.error)),
                     style: OutlinedButton.styleFrom(
@@ -574,6 +689,51 @@ class _ValidationScreenState extends State<ValidationScreen> {
             style: OutlinedButton.styleFrom(
               backgroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReworkNoticeBanner() {
+    if (_data.reworkComment == null || _data.reworkComment!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.amberBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.amberBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.amberAccent.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.assignment_return_rounded, color: AppColors.amberText, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Резюме было пересоздано с учетом замечаний HR',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.amberText),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Замечание HR: ${_data.reworkComment!}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
+                ),
+              ],
             ),
           ),
         ],

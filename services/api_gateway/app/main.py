@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from .schemas import (
     CVUploadResponse,
     CVValidateResponse,
     CVDetailResponse,
+    ReworkRequest,
     AdminLogsResponse,
     HealthReportResponse,
     ServiceHealthStatus,
@@ -169,6 +171,8 @@ async def upload_cv(
             if llm_resp.status_code != 200:
                 raise HTTPException(status_code=llm_resp.status_code, detail=f"Ошибка парсинга LLM: {llm_resp.text}")
             parsed_data = llm_resp.json().get("data", {})
+            parsed_data["_raw_markdown"] = markdown_content
+            parsed_data["_original_filename"] = filename
         except httpx.RequestError as e:
             log_event("api_gateway", "ERROR", f"LLMConvertor недоступен: {e}")
             raise HTTPException(status_code=503, detail="Сервис LLMConvertor недоступен")
@@ -273,13 +277,83 @@ async def validate_and_generate_docx(
         )
 
 
+async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
+    """
+    Фоновый конвейер пересоздания резюме при возврате на доработку:
+    1. Извлекает исходный Markdown (или реконструирует его из текущего состояния).
+    2. Передает в LLMConvertor с учетом замечаний HR.
+    3. Сохраняет обновленный JSONB и переводит статус обратно в 'Ожидает проверки HR'.
+    """
+    log_event("api_gateway", "INFO", f"[CV {cv_id}] Запущен фоновый конвейер пересоздания (доработки) резюме")
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            get_resp = await client.get(f"{settings.db_connector_url}/cv/{cv_id}")
+            if get_resp.status_code != 200:
+                log_event("api_gateway", "ERROR", f"[CV {cv_id}] Резюме не найдено при пересоздании: {get_resp.text}")
+                return
+            cv_record = get_resp.json()
+            jsonb_data = cv_record.get("jsonb", {})
+
+            markdown_content = jsonb_data.get("_raw_markdown", "")
+            filename = jsonb_data.get("_original_filename") or f"cv_{cv_id}.pdf"
+
+            if not markdown_content:
+                fio = jsonb_data.get("fio", "")
+                vac = jsonb_data.get("vacancy", "")
+                skills = ", ".join(jsonb_data.get("skills_and_tools", []))
+                pitch = jsonb_data.get("pitch", "")
+                markdown_content = f"# {fio}\n\nЖелаемая должность: {vac}\n\n## Навыки\n{skills}\n\n## О себе\n{pitch}\n"
+                for p in jsonb_data.get("projects", []):
+                    period = p.get("period", "")
+                    role = p.get("role_in_project", "")
+                    tasks = "\n- ".join(p.get("task_on_project", []))
+                    achieve = "\n- ".join(p.get("achievements_in_project", []))
+                    p_skills = p.get("skills_tools_in_project", "")
+                    markdown_content += f"\n### Проект: {role} ({period})\nЗадачи:\n- {tasks}\nДостижения:\n- {achieve}\nНавыки: {p_skills}\n"
+
+            llm_payload = {
+                "markdown": markdown_content,
+                "original_filename": filename,
+                "rework_comment": rework_comment,
+            }
+            llm_resp = await client.post(f"{settings.llm_convertor_url}/parse", json=llm_payload)
+            if llm_resp.status_code != 200:
+                log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка LLM при повторном парсинге: {llm_resp.text}")
+                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": "Ошибка парсинга"})
+                return
+
+            new_parsed_data = llm_resp.json().get("data", {})
+            new_parsed_data["_raw_markdown"] = markdown_content
+            new_parsed_data["_original_filename"] = filename
+            if rework_comment:
+                new_parsed_data["_rework_comment"] = rework_comment
+
+            update_payload = {
+                "jsonb": new_parsed_data,
+                "status": "Ожидает проверки HR",
+            }
+            await client.put(f"{settings.db_connector_url}/cv/{cv_id}", json=update_payload)
+            log_event("api_gateway", "INFO", f"[CV {cv_id}] Повторная обработка завершена. Статус: Ожидает проверки HR")
+
+    except Exception as e:
+        log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка в фоновом конвейере доработки: {e}")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": "Ошибка парсинга"})
+        except Exception:
+            pass
+
+
 @app.put("/api/v1/cv/{cv_id}/rework")
-async def return_cv_for_rework(cv_id: int):
+async def return_cv_for_rework(cv_id: int, req: Optional[ReworkRequest] = None):
     """
     ФТ-HR.3: Возврат резюме на доработку при обнаружении ошибок/неточностей.
-    Переводит резюме в статус 'Обработка резюме' (согласно UML State Machine).
+    Переводит резюме в статус 'Обработка резюме' и запускает фоновый процесс пересоздания с учетом замечаний HR.
     """
-    log_event("api_gateway", "WARNING", f"[CV {cv_id}] HR вернул резюме на доработку (Найдены ошибки). Переход в статус: Обработка резюме")
+    comment = req.comment if req else None
+    comment_str = f" Замечания HR: '{comment}'" if comment else ""
+    log_event("api_gateway", "WARNING", f"[CV {cv_id}] HR вернул резюме на доработку (Найдены ошибки).{comment_str} Переход в статус: Обработка резюме")
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.put(
             f"{settings.db_connector_url}/cv/{cv_id}/status",
@@ -287,7 +361,16 @@ async def return_cv_for_rework(cv_id: int):
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail="Не удалось обновить статус резюме в БД")
-        return {"cv_id": cv_id, "status": "Обработка резюме", "message": "Резюме возвращено на доработку"}
+
+    # Запускаем реальный фоновый процесс пересоздания и повторного парсинга!
+    asyncio.create_task(run_rework_pipeline(cv_id, comment))
+
+    return {
+        "cv_id": cv_id,
+        "status": "Обработка резюме",
+        "message": "Резюме возвращено на доработку, запущен повторный парсинг ИИ",
+        "comment": comment,
+    }
 
 
 @app.put("/api/v1/cv/{cv_id}/draft")

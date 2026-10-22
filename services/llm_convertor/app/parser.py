@@ -880,7 +880,7 @@ def dynamic_extract_cv(markdown: str, filename: Optional[str] = None) -> CVJsonC
     )
 
 
-def enrich_and_normalize_cv(cv: CVJsonContract, markdown: str) -> CVJsonContract:
+def enrich_and_normalize_cv(cv: CVJsonContract, markdown: str, rework_comment: Optional[str] = None) -> CVJsonContract:
     """
     Пост-процессор и нормализатор контракта CV:
     - Нормализует маски дат проектов.
@@ -904,6 +904,13 @@ def enrich_and_normalize_cv(cv: CVJsonContract, markdown: str) -> CVJsonContract
         else:
             cv.languages = "Русский — Родной, Английский — A2"
 
+    if rework_comment:
+        rc_lower = rework_comment.lower()
+        for tech in TECH_DICTIONARY:
+            if tech.lower() in rc_lower:
+                if not any(s.lower() == tech.lower() for s in cv.skills_and_tools):
+                    cv.skills_and_tools.append(tech)
+
     return cv
 
 
@@ -916,10 +923,15 @@ async def check_ollama_health() -> bool:
         return False
 
 
-async def parse_cv_with_llm(markdown: str, filename: Optional[str] = None, force_dynamic: bool = False) -> tuple[CVJsonContract, str]:
+async def parse_cv_with_llm(
+    markdown: str,
+    filename: Optional[str] = None,
+    force_dynamic: bool = False,
+    rework_comment: Optional[str] = None,
+) -> tuple[CVJsonContract, str]:
     if force_dynamic:
         raw_res = dynamic_extract_cv(markdown, filename)
-        return enrich_and_normalize_cv(raw_res, markdown), "dynamic_extractor"
+        return enrich_and_normalize_cv(raw_res, markdown, rework_comment), "dynamic_extractor"
 
     """
     Основной метод парсинга Markdown в JSON:
@@ -930,7 +942,7 @@ async def parse_cv_with_llm(markdown: str, filename: Optional[str] = None, force
     if not ollama_available:
         logger.info("Ollama (%s) недоступна. Используется универсальный динамический парсер.", settings.ollama_base_url)
         raw_res = dynamic_extract_cv(markdown, filename)
-        return enrich_and_normalize_cv(raw_res, markdown), "dynamic_extractor"
+        return enrich_and_normalize_cv(raw_res, markdown, rework_comment), "dynamic_extractor"
 
     system_instruction, example_schema = _load_prompt_files()
     current_date = datetime.now().date().isoformat()
@@ -947,7 +959,10 @@ async def parse_cv_with_llm(markdown: str, filename: Optional[str] = None, force
         "stream": False,
         "messages": [
             {"role": "system", "content": full_system_prompt},
-            {"role": "user", "content": f"Вот текст резюме кандидата:\n\n{markdown}"},
+            {"role": "user", "content": (
+                f"Вот текст резюме кандидата:\n\n{markdown}" +
+                (f"\n\nВАЖНОЕ ЗАМЕЧАНИЕ HR (РЕЗЮМЕ ВОЗВРАЩЕНО НА ДОРАБОТКУ):\n\"{rework_comment}\"\nОбязательно примени указанные правки!" if rework_comment else "")
+            )},
         ],
         "options": {
             "temperature": 0.05,
@@ -961,7 +976,7 @@ async def parse_cv_with_llm(markdown: str, filename: Optional[str] = None, force
             if resp.status_code != 200:
                 logger.warning("Ollama вернула код %s. Переход на динамический парсер.", resp.status_code)
                 raw_res = dynamic_extract_cv(markdown, filename)
-                return enrich_and_normalize_cv(raw_res, markdown), "dynamic_extractor"
+                return enrich_and_normalize_cv(raw_res, markdown, rework_comment), "dynamic_extractor"
 
             result = resp.json()
             raw_content = result.get("message", {}).get("content", "")
@@ -969,10 +984,10 @@ async def parse_cv_with_llm(markdown: str, filename: Optional[str] = None, force
 
             parsed_dict = json.loads(cleaned)
             cv_contract = CVJsonContract.model_validate(parsed_dict)
-            cv_contract = enrich_and_normalize_cv(cv_contract, markdown)
+            cv_contract = enrich_and_normalize_cv(cv_contract, markdown, rework_comment)
             return cv_contract, "ollama_llm"
 
     except Exception as e:
         logger.info("Ollama не ответила за выделенный таймаут (%s). Применен динамический парсер.", e)
         raw_res = dynamic_extract_cv(markdown, filename)
-        return enrich_and_normalize_cv(raw_res, markdown), "dynamic_extractor"
+        return enrich_and_normalize_cv(raw_res, markdown, rework_comment), "dynamic_extractor"

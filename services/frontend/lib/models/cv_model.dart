@@ -115,6 +115,7 @@ class CVJsonData {
   String employment;
   String status;
   List<ProjectItem> projects;
+  String? reworkComment;
 
   CVJsonData({
     this.fio = '',
@@ -130,6 +131,7 @@ class CVJsonData {
     this.employment = 'Полная занятость, удаленная работа',
     this.status = 'Готов к переезду',
     List<ProjectItem>? projects,
+    this.reworkComment,
   })  : skillsAndTools = skillsAndTools ?? [],
         education = education ?? [],
         advancedTraining = advancedTraining ?? [],
@@ -162,11 +164,12 @@ class CVJsonData {
               ?.map((e) => ProjectItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      reworkComment: json['_rework_comment'] ?? json['rework_comment'],
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final map = <String, dynamic>{
       'fio': fio,
       'vacancy': vacancy,
       'total_year_work': totalYearWork,
@@ -181,6 +184,10 @@ class CVJsonData {
       'status': status,
       'projects': projects.map((e) => e.toJson()).toList(),
     };
+    if (reworkComment != null) {
+      map['_rework_comment'] = reworkComment;
+    }
+    return map;
   }
 }
 

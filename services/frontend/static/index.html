@@ -426,7 +426,7 @@
 
         <!-- Action suite buttons -->
         <div class="flex items-center gap-2.5">
-          <button id="btn-rework" onclick="returnForRework()" class="px-3.5 py-2 rounded-xl bg-roseBg hover:bg-rose-100 text-roseText border border-roseBorder text-xs font-semibold flex items-center gap-1.5 transition-colors">
+          <button id="btn-rework" onclick="openReworkModal()" class="px-3.5 py-2 rounded-xl bg-roseBg hover:bg-rose-100 text-roseText border border-roseBorder text-xs font-semibold flex items-center gap-1.5 transition-colors">
             <span class="material-symbols-outlined text-[16px]">undo</span>
             <span>Вернуть на доработку</span>
           </button>
@@ -456,6 +456,19 @@
           <span class="material-symbols-outlined text-[16px]">code</span>
           <span>Смотреть JSON</span>
         </button>
+      </div>
+
+      <!-- Rework Notice Banner (if previously returned) -->
+      <div id="val-rework-banner" class="hidden p-4 bg-amberBg rounded-2xl border border-amberBorder flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-200 text-amber-950 flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[22px]">assignment_return</span>
+          </div>
+          <div>
+            <h4 class="text-sm font-bold text-amber-950">Резюме пересоздано с учётом замечаний HR</h4>
+            <p class="text-xs text-amber-900" id="val-rework-text"></p>
+          </div>
+        </div>
       </div>
 
       <!-- 2-Column Validation Grid -->
@@ -874,6 +887,65 @@
         <button id="btn-start-upload" onclick="startFileUpload()" disabled class="px-5 py-2 rounded-xl bg-secondary disabled:opacity-50 hover:bg-secondary-hover text-white text-xs font-semibold flex items-center gap-2 shadow-xs">
           <span>Начать парсинг</span>
           <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== REWORK MODAL DIALOG ==================== -->
+  <div id="modal-rework" class="hidden fixed inset-0 z-50 bg-primary/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-xl bg-white rounded-2xl border border-outline-variant shadow-2xl overflow-hidden flex flex-col">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 flex items-center justify-between border-b border-outline-variant">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-roseBg text-roseText flex items-center justify-center">
+            <span class="material-symbols-outlined text-[24px]">assignment_return</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-bold text-primary">Возврат резюме на доработку</h3>
+              <span class="px-2 py-0.5 rounded-full bg-roseBg text-roseText text-[10px] font-semibold">ИИ Пересоздание</span>
+            </div>
+            <p class="text-xs text-text-muted" id="rework-candidate-subtitle">Резюме кандидата</p>
+          </div>
+        </div>
+        <button onclick="closeReworkModal()" class="w-8 h-8 rounded-full hover:bg-surface-low text-text-muted flex items-center justify-center">
+          <span class="material-symbols-outlined text-[18px]">close</span>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 flex flex-col gap-4">
+        <div class="p-3.5 rounded-xl bg-surface-low border border-outline-variant text-xs text-text-secondary leading-relaxed flex items-start gap-2.5">
+          <span class="material-symbols-outlined text-secondary text-[18px] shrink-0 mt-0.5">info</span>
+          <div>
+            Опишите, что именно нужно исправить или дополнить. Модель <strong>Gemma-3</strong> повторно структурирует документ с учётом ваших замечаний, после чего резюме вернётся в реестр и автоматически обновится.
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-text-primary">Замечания и требования к доработке:</label>
+          <textarea id="rework-comment-input" rows="4" placeholder="Например: неверно извлечен стек, добавить Docker и PostgreSQL; пересчитать общий стаж до 7 лет 4 месяцев; удалить из описания проектов шаблонные фразы..." class="w-full p-3 rounded-xl bg-surface-low border border-outline-variant text-xs text-text-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-secondary/40 resize-none"></textarea>
+        </div>
+
+        <!-- Quick chips -->
+        <div class="flex flex-col gap-1.5">
+          <span class="text-[11px] font-semibold text-text-muted">Быстрые шаблоны замечаний:</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" onclick="appendReworkChip('Дополнить стек технологий и инструментов из текста проектов.')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] text-text-secondary transition-colors">+ Дополнить стек</button>
+            <button type="button" onclick="appendReworkChip('Скорректировать суммарный стаж работы и периоды проектов.')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] text-text-secondary transition-colors">+ Исправить стаж</button>
+            <button type="button" onclick="appendReworkChip('Переписать Elevator Pitch кратко от третьего лица (без «Я»).')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] text-text-secondary transition-colors">+ Саммари без «Я»</button>
+            <button type="button" onclick="appendReworkChip('Четче разделить задачи и ключевые достижения по проектам.')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] text-text-secondary transition-colors">+ Разделить задачи/достижения</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-4 bg-background border-t border-outline-variant flex justify-end gap-3">
+        <button onclick="closeReworkModal()" class="px-4 py-2 rounded-xl border border-outline-variant bg-white text-text-secondary text-xs font-semibold hover:bg-surface-low transition-colors">Отмена</button>
+        <button id="btn-submit-rework" onclick="submitReworkWithComment()" class="px-5 py-2 rounded-xl bg-roseText hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors">
+          <span class="material-symbols-outlined text-[16px]">undo</span>
+          <span>Отправить на доработку</span>
         </button>
       </div>
     </div>
@@ -1318,6 +1390,13 @@
         document.getElementById('val-employment').value = activeCvJson.employment || '';
         document.getElementById('val-status').value = activeCvJson.status || '';
 
+        if (activeCvJson._rework_comment) {
+          document.getElementById('val-rework-banner').classList.remove('hidden');
+          document.getElementById('val-rework-text').textContent = 'Замечание к доработке: ' + activeCvJson._rework_comment;
+        } else {
+          document.getElementById('val-rework-banner').classList.add('hidden');
+        }
+
         renderSkills();
         renderEducation();
         renderProjects();
@@ -1561,15 +1640,36 @@
       alert('JSON скопирован в буфер обмена');
     }
 
-    async function returnForRework() {
+    function openReworkModal() {
       if (!activeCvId) return;
-      if (!confirm(`Вернуть резюме #${activeCvId} на доработку? Статус изменится на «Обработка резюме».`)) {
-        return;
+      const fio = activeCvJson?.fio || 'Кандидат';
+      const vac = activeCvJson?.vacancy || '';
+      document.getElementById('rework-candidate-subtitle').textContent = `Резюме #${activeCvId}: ${fio} ${vac ? '• ' + vac : ''}`;
+      document.getElementById('rework-comment-input').value = '';
+      document.getElementById('modal-rework').classList.remove('hidden');
+    }
+
+    function closeReworkModal() {
+      document.getElementById('modal-rework').classList.add('hidden');
+    }
+
+    function appendReworkChip(text) {
+      const input = document.getElementById('rework-comment-input');
+      if (input.value.trim()) {
+        input.value = input.value.trim() + ' ' + text;
+      } else {
+        input.value = text;
       }
-      const btn = document.getElementById('btn-rework');
+      input.focus();
+    }
+
+    async function submitReworkWithComment() {
+      if (!activeCvId) return;
+      const comment = document.getElementById('rework-comment-input').value.trim();
+      const btn = document.getElementById('btn-submit-rework');
       const origHtml = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">sync</span><span>Возврат...</span>`;
+      btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">sync</span><span>Запуск пересоздания...</span>`;
 
       try {
         const resp = await fetch(`${API_BASE}/api/v1/cv/${activeCvId}/rework`, {
@@ -1577,19 +1677,22 @@
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${currentToken}`
-          }
+          },
+          body: JSON.stringify({ comment: comment })
         });
 
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
-          throw new Error(err.detail || 'Не удалось вернуть резюме на доработку');
+          throw new Error(err.detail || 'Не удалось отправить резюме на доработку');
         }
 
-        alert(`Резюме #${activeCvId} возвращено на доработку (статус: Обработка резюме).`);
+        closeReworkModal();
+        alert(`Резюме #${activeCvId} успешно возвращено на доработку.\nСтатус: «Обработка резюме». Запущен повторный парсинг Gemma-3.`);
         showDashboard();
         await loadCVs();
       } catch (err) {
         alert('Ошибка: ' + err.message);
+      } finally {
         btn.disabled = false;
         btn.innerHTML = origHtml;
       }

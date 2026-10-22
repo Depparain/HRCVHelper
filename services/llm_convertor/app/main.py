@@ -41,7 +41,12 @@ async def parse_cv(req: ParseRequest):
     if not req.markdown.strip():
         raise HTTPException(status_code=400, detail="Текст Markdown пуст")
 
-    cv_data, source = await parse_cv_with_llm(req.markdown, req.original_filename, req.force_dynamic)
+    cv_data, source = await parse_cv_with_llm(
+        markdown=req.markdown,
+        filename=req.original_filename,
+        force_dynamic=req.force_dynamic,
+        rework_comment=req.rework_comment,
+    )
     return ParseResponse(
         data=cv_data,
         source=source,
