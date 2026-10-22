@@ -67,11 +67,11 @@ async def lifespan(app: FastAPI):
                     "full_name": "Елена Смирнова",
                     "login": "recruiter@hrhelper.ai",
                     "hash_pass": hash_password("SecretAuth2024!"),
-                    "role": "hr",
+                    "role": "admin",
                 }
                 create_rec = await client.post(f"{settings.db_connector_url}/users", json=rec_payload)
                 if create_rec.status_code == 201:
-                    logger.info("Создан дефолтный пользователь HR: recruiter@hrhelper.ai")
+                    logger.info("Создан дефолтный пользователь HR (admin): recruiter@hrhelper.ai")
     except Exception as e:
         logger.info("Фоновая проверка дефолтного пользователя: %s", e)
     yield

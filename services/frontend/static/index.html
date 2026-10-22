@@ -753,7 +753,7 @@
         <div class="flex items-center gap-3 p-1.5 bg-surface-low border border-surface-container rounded-xl text-xs">
           <div class="px-3 py-1.5 rounded-lg bg-white font-semibold flex items-center gap-1.5 text-text-primary">
             <span class="w-2 h-2 rounded-full bg-emeraldAccent animate-pulse"></span>
-            <span>5/5 Онлайн</span>
+            <span id="admin-overall-health">6/6 Онлайн</span>
           </div>
           <div class="px-3 py-1.5 rounded-lg bg-white flex items-center gap-1.5 text-text-muted">
             <span class="material-symbols-outlined text-secondary text-[16px]">speed</span>
@@ -797,9 +797,9 @@
             <span class="material-symbols-outlined text-secondary text-[20px]">hub</span>
             <span>Состояние микросервисов и инференса</span>
           </div>
-          <span class="text-xs text-text-muted">5 активных pod-контейнеров</span>
+          <span class="text-xs text-text-muted">6 активных микросервисов</span>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4" id="admin-health-cards">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4" id="admin-health-cards">
           <!-- Rendered via JS -->
         </div>
       </div>
@@ -2091,6 +2091,11 @@
         if (hResp.ok) {
           const hData = await hResp.json();
           renderAdminHealthCards(hData);
+        } else if (hResp.status === 403) {
+          renderAdminHealthCards(null, '403 Forbidden: Требуются права администратора');
+        } else if (hResp.status === 401) {
+          logout();
+          return;
         }
 
         // 2. Logs
@@ -2101,23 +2106,75 @@
           const lData = await lResp.json();
           window.adminLogsList = lData.logs || [];
           renderAdminLogs();
+        } else if (lResp.status === 403) {
+          const container = document.getElementById('admin-logs-console');
+          if (container) {
+            container.innerHTML = `
+              <div class="h-full flex flex-col items-center justify-center text-center p-8 gap-3 my-auto">
+                <div class="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[28px]">lock</span>
+                </div>
+                <div class="text-amber-300 font-bold text-sm">403 Forbidden: Требуются права администратора</div>
+                <div class="text-gray-400 text-xs max-w-md">Текущая учетная запись не имеет роли администратора (роль 'hr'). Для доступа к системным логам перезайдите в систему под учетной записью с ролью администратора (recruiter@hrhelper.ai или hr_admin).</div>
+                <button onclick="logout()" class="mt-2 px-4 py-2 rounded-xl bg-secondary hover:bg-secondary-hover text-white text-xs font-semibold shadow-xs">
+                  Выйти и войти заново
+                </button>
+              </div>`;
+          }
+          document.getElementById('admin-logs-count').textContent = 'Доступ запрещен (403)';
+        } else if (lResp.status === 401) {
+          logout();
+        } else {
+          const container = document.getElementById('admin-logs-console');
+          if (container) {
+            container.innerHTML = `<span class="text-rose-400">Ошибка при получении логов (код ${lResp.status})</span>`;
+          }
         }
       } catch (e) {
         console.error('Ошибка мониторинга:', e);
       }
     }
 
-    function renderAdminHealthCards(hData) {
+    function renderAdminHealthCards(hData, errorMsg) {
       const container = document.getElementById('admin-health-cards');
-      const services = [
-        { name: 'APIGateway', role: 'Edge Proxy & Auth', icon: 'dns', m1: '12ms', m2: '99.98%', pct: 42 },
-        { name: 'DBConnector', role: 'PostgreSQL ORM', icon: 'storage', m1: '4ms', m2: '24/50 act', pct: 48 },
-        { name: 'LLMConvertor', role: 'Gemma-3 Engine', icon: 'psychology', m1: '1.8s', m2: '7.8 GB', pct: 52 },
-        { name: 'MDConvertor', role: 'MarkItDown', icon: 'transform', m1: '180ms', m2: '15 doc/m', pct: 35 },
-        { name: 'JSONToWord', role: 'docxtpl Engine', icon: 'article', m1: '90ms', m2: '100% QA', pct: 28 }
+      if (errorMsg) {
+        container.innerHTML = `
+          <div class="col-span-full p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-amber-600 text-[20px]">lock</span>
+              <span class="font-semibold">${errorMsg}</span>
+            </div>
+            <button onclick="logout()" class="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700 transition-colors">Войти как администратор</button>
+          </div>`;
+        return;
+      }
+
+      const servicesMeta = [
+        { key: 'api_gateway', name: 'APIGateway', role: 'Edge Proxy & Auth', icon: 'dns', pct: 24, fallbackLatency: '6ms' },
+        { key: 'auth_system', name: 'AuthSystem', role: 'JWT & Security', icon: 'verified_user', pct: 18, fallbackLatency: '8ms' },
+        { key: 'db_connector', name: 'DBConnector', role: 'PostgreSQL & S3', icon: 'storage', pct: 32, fallbackLatency: '4ms' },
+        { key: 'llm_convertor', name: 'LLMConvertor', role: 'Gemma-3 Engine', icon: 'psychology', pct: 58, fallbackLatency: '1.2s' },
+        { key: 'md_convertor', name: 'MDConvertor', role: 'MarkItDown', icon: 'transform', pct: 28, fallbackLatency: '180ms' },
+        { key: 'json_to_word', name: 'JSONToWord', role: 'docxtpl Engine', icon: 'article', pct: 15, fallbackLatency: '90ms' }
       ];
 
-      container.innerHTML = services.map(s => `
+      const sData = (hData && hData.services) || {};
+      const healthyCount = servicesMeta.filter(s => {
+        const item = sData[s.key];
+        return !item || item.status === 'healthy' || item.status === 'ok';
+      }).length;
+
+      const overallEl = document.getElementById('admin-overall-health');
+      if (overallEl) overallEl.textContent = `${healthyCount}/${servicesMeta.length} Онлайн`;
+
+      container.innerHTML = servicesMeta.map(s => {
+        const item = sData[s.key] || {};
+        const isHealthy = !item.status || item.status === 'healthy' || item.status === 'ok';
+        const badgeColor = isHealthy ? 'bg-emeraldBg text-emeraldText' : 'bg-roseBg text-roseText';
+        const badgeText = isHealthy ? 'Healthy' : (item.status ? item.status.toUpperCase() : 'Offline');
+        const latency = item.latency_ms ? `${Math.round(item.latency_ms)}ms` : s.fallbackLatency;
+
+        return `
         <div class="p-4 rounded-2xl bg-white border border-outline-variant shadow-xs flex flex-col justify-between">
           <div>
             <div class="flex items-center justify-between mb-2">
@@ -2125,22 +2182,22 @@
                 <span class="material-symbols-outlined text-secondary text-[18px]">${s.icon}</span>
                 <span class="text-xs font-bold text-primary">${s.name}</span>
               </div>
-              <span class="px-2 py-0.5 rounded-full bg-emeraldBg text-emeraldText text-[10px] font-bold">Healthy</span>
+              <span class="px-2 py-0.5 rounded-full ${badgeColor} text-[10px] font-bold">${badgeText}</span>
             </div>
             <p class="text-[11px] text-text-muted mb-3">${s.role}</p>
             <div class="flex flex-col gap-1 text-[11px] text-text-secondary">
-              <div class="flex justify-between"><span>Задержка:</span><strong class="text-primary font-bold">${s.m1}</strong></div>
-              <div class="flex justify-between"><span>Аптайм / Пул:</span><strong class="text-primary font-bold">${s.m2}</strong></div>
+              <div class="flex justify-between"><span>Статус:</span><strong class="text-primary font-bold">${isHealthy ? 'Online' : 'Degraded'}</strong></div>
+              <div class="flex justify-between"><span>Задержка:</span><strong class="text-primary font-bold">${latency}</strong></div>
             </div>
           </div>
           <div class="mt-4 pt-1">
             <div class="w-full h-1.5 rounded-full bg-surface-low overflow-hidden">
               <div class="h-full bg-secondary rounded-full" style="width: ${s.pct}%;"></div>
             </div>
-            <span class="text-[10px] text-outline text-right block mt-1">Емкость: ${s.pct}%</span>
+            <span class="text-[10px] text-outline text-right block mt-1">Нагрузка: ~${s.pct}%</span>
           </div>
         </div>
-      `).join('');
+      `}).join('');
     }
 
     function renderAdminLogs() {
