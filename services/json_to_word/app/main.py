@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import quote
@@ -18,6 +20,25 @@ except (ImportError, ValueError):
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("json_to_word")
+
+_LOG_BUFFER: deque[dict] = deque(maxlen=200)
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        try:
+            entry = {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "level": record.levelname,
+                "service": "json_to_word",
+                "message": self.format(record),
+            }
+            _LOG_BUFFER.appendleft(entry)
+        except Exception:
+            self.handleError(record)
+
+_log_handler = InMemoryLogHandler()
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_log_handler)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = BASE_DIR / "template" / "placeholders_cv_docx.docx"
@@ -53,6 +74,12 @@ def health_check():
         template_exists=tpl_ok,
         style_exists=style_ok,
     )
+
+
+@app.get("/internal/logs")
+def get_internal_logs(limit: int = 100):
+    """Внутренний эндпоинт буферизированных системных логов (TASK-3.4)."""
+    return {"service": "json_to_word", "logs": list(_LOG_BUFFER)[:limit]}
 
 
 @app.post("/generate")

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import quote
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Response
@@ -27,6 +29,25 @@ from .config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("db_connector")
+
+_LOG_BUFFER: deque[dict] = deque(maxlen=200)
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        try:
+            entry = {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "level": record.levelname,
+                "service": "db_connector",
+                "message": self.format(record),
+            }
+            _LOG_BUFFER.appendleft(entry)
+        except Exception:
+            self.handleError(record)
+
+_log_handler = InMemoryLogHandler()
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_log_handler)
 
 
 @asynccontextmanager
@@ -65,6 +86,12 @@ def health_check(db: Session = Depends(get_db)):
 
     status = "ok" if (db_ok and storage_ok) else "degraded"
     return HealthResponse(status=status, database=db_ok, storage=storage_ok)
+
+
+@app.get("/internal/logs")
+def get_internal_logs(limit: int = 100):
+    """Внутренний эндпоинт буферизированных системных логов (TASK-3.4)."""
+    return {"service": "db_connector", "logs": list(_LOG_BUFFER)[:limit]}
 
 
 # --- HR Endpoints ---

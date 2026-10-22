@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +13,25 @@ from .parser import parse_cv_with_llm, check_ollama_health
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("llm_convertor")
+
+_LOG_BUFFER: deque[dict] = deque(maxlen=200)
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        try:
+            entry = {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "level": record.levelname,
+                "service": "llm_convertor",
+                "message": self.format(record),
+            }
+            _LOG_BUFFER.appendleft(entry)
+        except Exception:
+            self.handleError(record)
+
+_log_handler = InMemoryLogHandler()
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_log_handler)
 
 
 @asynccontextmanager
@@ -49,6 +70,12 @@ async def health_check():
         ollama_connected=ollama_ok,
         model=settings.ollama_model,
     )
+
+
+@app.get("/internal/logs")
+def get_internal_logs(limit: int = 100):
+    """Внутренний эндпоинт буферизированных системных логов (TASK-3.4)."""
+    return {"service": "llm_convertor", "logs": list(_LOG_BUFFER)[:limit]}
 
 
 @app.post("/parse", response_model=ParseResponse)

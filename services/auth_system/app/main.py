@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException, status
@@ -21,6 +23,25 @@ from .schemas import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("auth_system")
+
+_LOG_BUFFER: deque[dict] = deque(maxlen=200)
+
+class InMemoryLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        try:
+            entry = {
+                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+                "level": record.levelname,
+                "service": "auth_system",
+                "message": self.format(record),
+            }
+            _LOG_BUFFER.appendleft(entry)
+        except Exception:
+            self.handleError(record)
+
+_log_handler = InMemoryLogHandler()
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_log_handler)
 
 
 @asynccontextmanager
@@ -87,6 +108,12 @@ async def health_check():
         status="ok" if db_ok else "degraded",
         db_connector=db_ok,
     )
+
+
+@app.get("/internal/logs")
+def get_internal_logs(limit: int = 100):
+    """Внутренний эндпоинт буферизированных системных логов (TASK-3.4)."""
+    return {"service": "auth_system", "logs": list(_LOG_BUFFER)[:limit]}
 
 
 @app.post("/auth/login", response_model=LoginResponse)
