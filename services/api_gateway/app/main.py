@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import httpx
 from urllib.parse import quote
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Query, Response, status
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Depends, Header, Query, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .config import settings
 from .enums import CVStatus, UserRole
@@ -56,6 +58,59 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- Глобальные обработчики исключений (Unified Error Handling) ---
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    incident_id = uuid.uuid4().hex[:12]
+    logger.warning("HTTPException [%s] %s %s: %s", incident_id, request.method, request.url.path, exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": True,
+            "code": exc.status_code,
+            "detail": exc.detail,
+            "incident_id": incident_id,
+            "path": request.url.path,
+        },
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def custom_validation_exception_handler(request: Request, exc: RequestValidationError):
+    incident_id = uuid.uuid4().hex[:12]
+    logger.warning("ValidationError [%s] %s %s: %s", incident_id, request.method, request.url.path, exc.errors())
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": True,
+            "code": 422,
+            "detail": "Ошибка валидации входных данных",
+            "errors": exc.errors(),
+            "incident_id": incident_id,
+            "path": request.url.path,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def custom_unhandled_exception_handler(request: Request, exc: Exception):
+    incident_id = uuid.uuid4().hex[:12]
+    logger.exception("Unhandled Exception [%s] %s %s: %s", incident_id, request.method, request.url.path, exc)
+    log_event("api_gateway", "CRITICAL", f"Критический сбой [{incident_id}] на {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": True,
+            "code": 500,
+            "detail": f"Внутренняя системная ошибка (ID инцидента: {incident_id})",
+            "incident_id": incident_id,
+            "path": request.url.path,
+        },
+    )
 
 
 # --- Хелперы и зависимости для проверки авторизации и RBAC ---
@@ -182,53 +237,62 @@ async def upload_cv(
             log_event("api_gateway", "ERROR", f"DBConnector недоступен: {e}")
             raise HTTPException(status_code=503, detail="Сервис базы данных недоступен")
 
-        # 2. Переход: "Конвертация в MD"
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.MD_CONVERSION.value}")
-        await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.MD_CONVERSION.value})
-
         try:
-            files = {"file": (filename, io.BytesIO(file_bytes), file.content_type or "application/octet-stream")}
-            md_resp = await client.post(f"{settings.md_convertor_url}/convert", files=files)
-            if md_resp.status_code != 200:
-                raise HTTPException(status_code=md_resp.status_code, detail=f"Ошибка конвертации в Markdown: {md_resp.text}")
-            markdown_content = md_resp.json().get("markdown", "")
-        except httpx.RequestError as e:
-            log_event("api_gateway", "ERROR", f"MDConvertor недоступен: {e}")
-            raise HTTPException(status_code=503, detail="Сервис MDConvertor недоступен")
+            # 2. Переход: "Конвертация в MD"
+            log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.MD_CONVERSION.value}")
+            await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.MD_CONVERSION.value})
 
-        # 3. Переход: "Обработка резюме" (LLM Gemma-3)
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.LLM_PROCESSING.value} (Gemma-3)")
-        await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.LLM_PROCESSING.value})
+            try:
+                files = {"file": (filename, io.BytesIO(file_bytes), file.content_type or "application/octet-stream")}
+                md_resp = await client.post(f"{settings.md_convertor_url}/convert", files=files)
+                if md_resp.status_code != 200:
+                    raise HTTPException(status_code=md_resp.status_code, detail=f"Ошибка конвертации в Markdown: {md_resp.text}")
+                markdown_content = md_resp.json().get("markdown", "")
+            except httpx.RequestError as e:
+                log_event("api_gateway", "ERROR", f"MDConvertor недоступен: {e}")
+                raise HTTPException(status_code=503, detail="Сервис MDConvertor недоступен")
 
-        try:
-            llm_payload = {"markdown": markdown_content, "original_filename": filename}
-            llm_resp = await client.post(f"{settings.llm_convertor_url}/parse", json=llm_payload)
-            if llm_resp.status_code != 200:
-                raise HTTPException(status_code=llm_resp.status_code, detail=f"Ошибка парсинга LLM: {llm_resp.text}")
-            parsed_data = llm_resp.json().get("data", {})
-            parsed_data["_raw_markdown"] = markdown_content
-            parsed_data["_original_filename"] = filename
-        except httpx.RequestError as e:
-            log_event("api_gateway", "ERROR", f"LLMConvertor недоступен: {e}")
-            raise HTTPException(status_code=503, detail="Сервис LLMConvertor недоступен")
+            # 3. Переход: "Обработка резюме" (LLM Gemma-3)
+            log_event("api_gateway", "INFO", f"[CV {cv_id}] Переход в статус: {CVStatus.LLM_PROCESSING.value} (Gemma-3)")
+            await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.LLM_PROCESSING.value})
 
-        # 4. Переход: "Ожидает проверки HR" и сохранение черновика JSONB
-        log_event("api_gateway", "INFO", f"[CV {cv_id}] Парсинг завершен. Переход в статус: {CVStatus.AWAITING_HR.value}")
-        update_payload = {
-            "jsonb": parsed_data,
-            "status": CVStatus.AWAITING_HR.value,
-        }
-        update_resp = await client.put(f"{settings.db_connector_url}/cv/{cv_id}", json=update_payload)
-        if update_resp.status_code != 200:
-            raise HTTPException(status_code=500, detail="Не удалось сохранить распарсенный JSON в БД")
+            try:
+                llm_payload = {"markdown": markdown_content, "original_filename": filename}
+                llm_resp = await client.post(f"{settings.llm_convertor_url}/parse", json=llm_payload)
+                if llm_resp.status_code != 200:
+                    raise HTTPException(status_code=llm_resp.status_code, detail=f"Ошибка парсинга LLM: {llm_resp.text}")
+                parsed_data = llm_resp.json().get("data", {})
+                parsed_data["_raw_markdown"] = markdown_content
+                parsed_data["_original_filename"] = filename
+            except httpx.RequestError as e:
+                log_event("api_gateway", "ERROR", f"LLMConvertor недоступен: {e}")
+                raise HTTPException(status_code=503, detail="Сервис LLMConvertor недоступен")
 
-        return CVUploadResponse(
-            cv_id=cv_id,
-            hr_id=effective_hr_id,
-            status=CVStatus.AWAITING_HR.value,
-            data=parsed_data,
-            filename=filename,
-        )
+            # 4. Переход: "Ожидает проверки HR" и сохранение черновика JSONB
+            log_event("api_gateway", "INFO", f"[CV {cv_id}] Парсинг завершен. Переход в статус: {CVStatus.AWAITING_HR.value}")
+            update_payload = {
+                "jsonb": parsed_data,
+                "status": CVStatus.AWAITING_HR.value,
+            }
+            update_resp = await client.put(f"{settings.db_connector_url}/cv/{cv_id}", json=update_payload)
+            if update_resp.status_code != 200:
+                raise HTTPException(status_code=500, detail="Не удалось сохранить распарсенный JSON в БД")
+
+            return CVUploadResponse(
+                cv_id=cv_id,
+                hr_id=effective_hr_id,
+                status=CVStatus.AWAITING_HR.value,
+                data=parsed_data,
+                filename=filename,
+            )
+        except Exception as e:
+            logger.exception("[CV %s] Ошибка в конвейере обработки резюме: %s", cv_id, e)
+            log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка обработки резюме: {e}")
+            try:
+                await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.ERROR.value})
+            except Exception as update_err:
+                logger.error("[CV %s] Не удалось выставить статус ошибки: %s", cv_id, update_err, exc_info=True)
+            raise
 
 
 @app.put("/api/v1/cv/{cv_id}/validate", response_model=CVValidateResponse)
@@ -372,12 +436,13 @@ async def run_rework_pipeline(cv_id: int, rework_comment: Optional[str] = None):
             log_event("api_gateway", "INFO", f"[CV {cv_id}] Повторная обработка завершена. Статус: {CVStatus.AWAITING_HR.value}")
 
     except Exception as e:
+        logger.exception("[CV %s] Ошибка в фоновом конвейере доработки: %s", cv_id, e)
         log_event("api_gateway", "ERROR", f"[CV {cv_id}] Ошибка в фоновом конвейере доработки: {e}")
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.put(f"{settings.db_connector_url}/cv/{cv_id}/status", json={"status": CVStatus.ERROR.value})
-        except Exception:
-            pass
+        except Exception as update_err:
+            logger.error("[CV %s] Не удалось перевести резюме в статус ошибки: %s", cv_id, update_err, exc_info=True)
 
 
 @app.put("/api/v1/cv/{cv_id}/rework")
