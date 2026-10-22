@@ -76,7 +76,7 @@ def create_user(hr_in: HRCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Пользователь с таким логином уже существует")
     db_hr = crud.create_hr(db, hr_in)
-    return HRResponse(hr_id=db_hr.HR_ID, full_name=db_hr.Full_Name, login=db_hr.Login)
+    return HRResponse.model_validate(db_hr)
 
 
 @app.get("/users/login/{login}", response_model=HRInDB)
@@ -85,12 +85,7 @@ def get_user_by_login(login: str, db: Session = Depends(get_db)):
     db_hr = crud.get_hr_by_login(db, login)
     if not db_hr:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return HRInDB(
-        hr_id=db_hr.HR_ID,
-        full_name=db_hr.Full_Name,
-        login=db_hr.Login,
-        hash_pass=db_hr.Hash_Pass,
-    )
+    return HRInDB.model_validate(db_hr)
 
 
 @app.get("/users/id/{hr_id}", response_model=HRResponse)
@@ -99,14 +94,14 @@ def get_user_by_id(hr_id: int, db: Session = Depends(get_db)):
     db_hr = crud.get_hr_by_id(db, hr_id)
     if not db_hr:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return HRResponse(hr_id=db_hr.HR_ID, full_name=db_hr.Full_Name, login=db_hr.Login)
+    return HRResponse.model_validate(db_hr)
 
 
 @app.get("/users", response_model=List[HRResponse])
 def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     from . import crud
     hrs = crud.list_hrs(db, skip=skip, limit=limit)
-    return [HRResponse(hr_id=h.HR_ID, full_name=h.Full_Name, login=h.Login) for h in hrs]
+    return [HRResponse.model_validate(h) for h in hrs]
 
 
 # --- CV Endpoints ---
@@ -115,13 +110,7 @@ def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 def create_cv_record(cv_in: CVCreate, db: Session = Depends(get_db)):
     from . import crud
     db_cv = crud.create_cv(db, cv_in)
-    return CVResponse(
-        cv_id=db_cv.CV_ID,
-        hr_id=db_cv.HR_ID,
-        jsonb=db_cv.JSONB,
-        status=db_cv.Status,
-        docx=db_cv.Docx,
-    )
+    return CVResponse.model_validate(db_cv)
 
 
 @app.get("/cv/{cv_id}", response_model=CVResponse)
@@ -130,13 +119,7 @@ def get_cv_record(cv_id: int, db: Session = Depends(get_db)):
     db_cv = crud.get_cv_by_id(db, cv_id)
     if not db_cv:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
-    return CVResponse(
-        cv_id=db_cv.CV_ID,
-        hr_id=db_cv.HR_ID,
-        jsonb=db_cv.JSONB,
-        status=db_cv.Status,
-        docx=db_cv.Docx,
-    )
+    return CVResponse.model_validate(db_cv)
 
 
 @app.put("/cv/{cv_id}", response_model=CVResponse)
@@ -145,13 +128,7 @@ def update_cv_record(cv_id: int, cv_update: CVUpdate, db: Session = Depends(get_
     db_cv = crud.update_cv(db, cv_id, cv_update)
     if not db_cv:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
-    return CVResponse(
-        cv_id=db_cv.CV_ID,
-        hr_id=db_cv.HR_ID,
-        jsonb=db_cv.JSONB,
-        status=db_cv.Status,
-        docx=db_cv.Docx,
-    )
+    return CVResponse.model_validate(db_cv)
 
 
 @app.put("/cv/{cv_id}/status", response_model=CVResponse)
@@ -160,13 +137,7 @@ def update_cv_status_record(cv_id: int, update: CVStatusUpdate, db: Session = De
     db_cv = crud.update_cv_status(db, cv_id, update.status)
     if not db_cv:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
-    return CVResponse(
-        cv_id=db_cv.CV_ID,
-        hr_id=db_cv.HR_ID,
-        jsonb=db_cv.JSONB,
-        status=db_cv.Status,
-        docx=db_cv.Docx,
-    )
+    return CVResponse.model_validate(db_cv)
 
 
 @app.put("/cv/{cv_id}/docx", response_model=CVResponse)
@@ -175,13 +146,7 @@ def update_cv_docx_record(cv_id: int, docx_key: str, status: Optional[str] = CVS
     db_cv = crud.update_cv_docx(db, cv_id, docx_key, status)
     if not db_cv:
         raise HTTPException(status_code=404, detail=f"Резюме с ID {cv_id} не найдено")
-    return CVResponse(
-        cv_id=db_cv.CV_ID,
-        hr_id=db_cv.HR_ID,
-        jsonb=db_cv.JSONB,
-        status=db_cv.Status,
-        docx=db_cv.Docx,
-    )
+    return CVResponse.model_validate(db_cv)
 
 
 @app.get("/cv", response_model=List[CVResponse])
@@ -191,16 +156,7 @@ def list_cvs(hr_id: Optional[int] = None, skip: int = 0, limit: int = 100, db: S
         cvs = crud.list_cvs_by_hr(db, hr_id, skip, limit)
     else:
         cvs = crud.list_all_cvs(db, skip, limit)
-    return [
-        CVResponse(
-            cv_id=c.CV_ID,
-            hr_id=c.HR_ID,
-            jsonb=c.JSONB,
-            status=c.Status,
-            docx=c.Docx,
-        )
-        for c in cvs
-    ]
+    return [CVResponse.model_validate(c) for c in cvs]
 
 
 # --- Storage Endpoints ---
