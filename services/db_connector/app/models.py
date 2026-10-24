@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from typing import Any, Dict, Optional
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, DeclarativeBase
 
@@ -108,4 +108,62 @@ class CV(Base):
             "jsonb": self.jsonb,
             "status": self.status,
             "docx": self.docx,
+        }
+
+
+class Template(Base):
+    """Таблица шаблонов Word (.docx) в БД PostgreSQL."""
+    __tablename__ = "Template"
+
+    template_id = Column("Template_ID", String(64), primary_key=True, index=True)
+    name = Column("Name", String(255), nullable=False)
+    description = Column("Description", Text, nullable=True)
+    filename = Column("Filename", String(255), nullable=False)
+    file_bytes = Column("File_Bytes", LargeBinary, nullable=False)
+    is_system = Column("Is_System", Boolean, nullable=False, default=False)
+    is_active = Column("Is_Active", Boolean, nullable=False, default=False)
+    fields_config = Column("Fields_Config", JSONB, nullable=True)
+    created_at = Column("Created_At", String(64), nullable=True)
+    hr_id = Column("HR_ID", Integer, ForeignKey("HR.HR_ID"), nullable=True)
+
+    hr = relationship("HR")
+
+    def to_dict(self, include_bytes: bool = False) -> Dict[str, Any]:
+        data = {
+            "template_id": self.template_id,
+            "id": self.template_id,
+            "name": self.name,
+            "description": self.description,
+            "filename": self.filename,
+            "is_system": self.is_system,
+            "is_active": self.is_active,
+            "fields_config": self.fields_config,
+            "size_bytes": len(self.file_bytes) if self.file_bytes else 0,
+            "created_at": self.created_at,
+            "hr_id": self.hr_id,
+        }
+        if include_bytes:
+            data["file_bytes"] = self.file_bytes
+        return data
+
+
+class FieldConfig(Base):
+    """Таблица конфигураций извлекаемых полей резюме (JSON Schema) в БД PostgreSQL."""
+    __tablename__ = "FieldConfig"
+
+    config_key = Column("Config_Key", String(64), primary_key=True, index=True)
+    name = Column("Name", String(255), nullable=False, default="Конфигурация полей")
+    fields = Column("Fields", JSONB, nullable=False, default=dict)
+    updated_at = Column("Updated_At", String(64), nullable=True)
+    hr_id = Column("HR_ID", Integer, ForeignKey("HR.HR_ID"), nullable=True)
+
+    hr = relationship("HR")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "config_key": self.config_key,
+            "name": self.name,
+            "fields": self.fields,
+            "updated_at": self.updated_at,
+            "hr_id": self.hr_id,
         }

@@ -113,6 +113,14 @@ def normalize_period_str(period_raw: str) -> str:
         y1, m1, y2, m2, yd, md = strict_match.groups()
         return f"{y1} год {m1} месяц - {y2} год {m2} месяц / {format_years_months(int(yd), int(md))}"
 
+    year_only_match = re.match(r"^(\d{4})\s*[-–—]\s*(\d{4})$", p)
+    if year_only_match:
+        y1, y2 = year_only_match.group(1), year_only_match.group(2)
+        total_m = (int(y2) - int(y1)) * 12
+        y_dur = max(0, total_m // 12)
+        m_dur = max(0, total_m % 12)
+        return f"{y1} год 01 месяц - {y2} год 12 месяц / {format_years_months(y_dur, m_dur)}"
+
     date_matches = list(re.finditer(r"([а-яa-z]+|\d{1,2})[\s\.\-]+(\d{4})", p_lower))
     ym_matches = list(re.finditer(r"(\d{4})\s*год\s*(\d{1,2})\s*месяц", p_lower))
 
@@ -298,7 +306,8 @@ def dynamic_extract_cv(markdown: str, filename: Optional[str] = None) -> CVJsonC
             bool(re.search(rf"\b({month_regex})[а-я]*\s+\d{{4}}\s*[-]", l_lower)) or
             bool(re.search(r"\b\d{4}\s*год\s*\d{1,2}\s*месяц\s*-", l_lower)) or
             bool(re.search(rf"\b({month_regex})[а-я]*\s+\d{{4}}\s*(?:по|\-)\s*(?:наст|настоящее)", l_lower)) or
-            bool(re.search(rf"\b({month_regex})[а-я]*\s+\d{{4}}\b.*(?:наст|настоящее)", l_lower))
+            bool(re.search(rf"\b({month_regex})[а-я]*\s+\d{{4}}\b.*(?:наст|настоящее)", l_lower)) or
+            bool(re.search(r"\b(?:19|20)\d{2}\s*[-–—]\s*(?:(?:19|20)\d{2}|наст|настоящее)", l_lower))
         )
 
         if has_period:
@@ -326,14 +335,17 @@ def dynamic_extract_cv(markdown: str, filename: Optional[str] = None) -> CVJsonC
 
         m_start = re.search(rf"\b({month_regex})[а-я]*\s+\d{{4}}", p_line, re.IGNORECASE)
         ym_start = re.search(r"\b\d{4}\s*год", p_line, re.IGNORECASE)
+        yr_start = re.search(r"\b(?:19|20)\d{2}\s*[-–—]", p_line, re.IGNORECASE)
         split_idx = -1
         if m_start and m_start.start() > 2:
             split_idx = m_start.start()
         elif ym_start and ym_start.start() > 2:
             split_idx = ym_start.start()
+        elif yr_start and yr_start.start() > 2:
+            split_idx = yr_start.start()
 
         if split_idx > 2:
-            lead_part = p_line[:split_idx].strip()
+            lead_part = p_line[:split_idx].strip().rstrip(",-–— ")
             period_str = p_line[split_idx:].strip()
             if lead_part.lower().startswith("роль:"):
                 role = re.sub(r"^роль:\s*", "", lead_part, flags=re.IGNORECASE).strip()
@@ -532,6 +544,8 @@ def dynamic_extract_cv(markdown: str, filename: Optional[str] = None) -> CVJsonC
                 tasks.append(cur_item.strip())
 
         role = re.sub(r"^роль:\s*", "", role, flags=re.IGNORECASE).strip("|\t ").strip()
+        if not role and vacancy:
+            role = vacancy
 
         # Игнорируем пустые плейсхолдеры из табличных резюме ("Место работы / время")
         clean_company = company.strip("|\t ").strip()
@@ -861,6 +875,9 @@ def dynamic_extract_cv(markdown: str, filename: Optional[str] = None) -> CVJsonC
         status=status,
         projects=parsed_projects,
     )
+
+
+heuristic_extract_cv = dynamic_extract_cv
 
 
 def enrich_and_normalize_cv(cv: CVJsonContract, markdown: str, rework_comment: Optional[str] = None) -> CVJsonContract:

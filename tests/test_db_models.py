@@ -64,3 +64,69 @@ def test_cv_lifecycle(db_session):
     cv = crud.update_cv_docx(db_session, cv.CV_ID, "resumes/cv_1.docx", status=CVStatus.READY.value)
     assert cv.Status == "Готово"
     assert cv.Docx == "resumes/cv_1.docx"
+
+
+def test_template_lifecycle(db_session):
+    # Создание системного и кастомного шаблона
+    dummy_docx = b"PK\x03\x04mock_docx_binary_data"
+    tpl = crud.create_template(
+        db_session,
+        name="IT Корпоративный",
+        filename="it_corp.docx",
+        file_bytes=dummy_docx,
+        description="Шаблон для технических специалистов",
+        is_system=False,
+        make_active=True,
+    )
+    assert tpl.template_id is not None
+    assert tpl.name == "IT Корпоративный"
+    assert tpl.is_active is True
+    assert tpl.file_bytes == dummy_docx
+
+    # Получение активного шаблона
+    active = crud.get_active_template(db_session)
+    assert active is not None
+    assert active.template_id == tpl.template_id
+
+    # Список шаблонов
+    templates = crud.list_templates(db_session)
+    assert len(templates) >= 1
+    assert any(t.template_id == tpl.template_id for t in templates)
+
+    # Удаление
+    deleted = crud.delete_template(db_session, tpl.template_id)
+    assert deleted is True
+    assert crud.get_template_by_id(db_session, tpl.template_id) is None
+
+
+def test_field_config_lifecycle(db_session):
+    fields_map = {
+        "fio": True,
+        "vacancy": True,
+        "pitch": True,
+        "skills_tools": True,
+        "projects": True,
+        "education": False,
+    }
+    cfg = crud.save_field_config(
+        db_session,
+        fields=fields_map,
+        config_key="custom_tech",
+        name="Технический профиль",
+    )
+    assert cfg.config_key == "custom_tech"
+    assert cfg.name == "Технический профиль"
+    assert cfg.fields["fio"] is True
+    assert cfg.fields["education"] is False
+
+    # Получение конфигурации
+    loaded = crud.get_field_config(db_session, "custom_tech")
+    assert loaded is not None
+    assert loaded.fields["pitch"] is True
+
+    # Обновление существующей конфигурации
+    updated_fields = dict(fields_map)
+    updated_fields["education"] = True
+    cfg_updated = crud.save_field_config(db_session, fields=updated_fields, config_key="custom_tech")
+    assert cfg_updated.fields["education"] is True
+

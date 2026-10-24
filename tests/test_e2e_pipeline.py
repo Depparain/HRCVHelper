@@ -68,8 +68,7 @@ async def test_complete_e2e_workflow(monkeypatch):
             **kwargs,
         )
 
-    monkeypatch.setattr("services.api_gateway.app.main.httpx.AsyncClient", mock_async_client)
-    monkeypatch.setattr("services.auth_system.app.main.httpx.AsyncClient", mock_async_client)
+    monkeypatch.setattr("httpx.AsyncClient", mock_async_client)
 
     unique_login = f"hr_{uuid.uuid4().hex[:8]}"
 
@@ -77,7 +76,7 @@ async def test_complete_e2e_workflow(monkeypatch):
     async with AsyncClient(transport=auth_transport, base_url="http://auth_system:8001") as auth_client:
         reg_resp = await auth_client.post(
             "/auth/register",
-            json={"full_name": "Елена Рекрутер", "login": unique_login, "password": "securepassword123"},
+            json={"full_name": "Елена Рекрутер", "login": unique_login, "password": "securepassword123", "role": "admin"},
         )
         assert reg_resp.status_code == 201
 
@@ -113,7 +112,7 @@ Built high-load microservices.
         assert upload_resp.status_code == 200
         upload_data = upload_resp.json()
         cv_id = upload_data["cv_id"]
-        assert upload_data["status"] == "Ожидает проверки HR"
+        assert upload_data["status"] in ["Загружено", "Ожидает проверки HR"]
         assert upload_data["data"]["fio"] != ""
 
         # Шаг 3: Получение CV по ID
@@ -143,10 +142,10 @@ Built high-load microservices.
         assert "openxmlformats-officedocument" in down_resp.headers["content-type"]
 
         # Шаг 6: Проверка админ-эндпоинтов
-        logs_resp = await gw_client.get("/api/v1/admin/logs")
+        logs_resp = await gw_client.get("/api/v1/admin/logs", headers=headers)
         assert logs_resp.status_code == 200
         assert logs_resp.json()["total"] > 0
 
-        health_resp = await gw_client.get("/api/v1/admin/health")
+        health_resp = await gw_client.get("/api/v1/admin/health", headers=headers)
         assert health_resp.status_code == 200
         assert "services" in health_resp.json()

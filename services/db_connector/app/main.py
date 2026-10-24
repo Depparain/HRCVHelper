@@ -4,7 +4,7 @@ import logging
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,8 @@ from .schemas import (
     CVResponse,
     StorageUploadResponse,
     HealthResponse,
+    TemplateResponse,
+    FieldConfigResponse,
 )
 from .s3_client import s3_storage
 from .config import settings
@@ -216,6 +218,142 @@ def download_file_from_storage(key: str):
         raise HTTPException(status_code=404, detail=f"Файл {key} не найден")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка скачивания: {e}")
+
+
+# --- Template Endpoints (PostgreSQL) ---
+
+@app.get("/templates", response_model=List[TemplateResponse])
+def get_templates_list(db: Session = Depends(get_db)):
+    """Возвращает список всех шаблонов Word из базы данных."""
+    from . import crud
+    templates = crud.list_templates(db)
+    return [TemplateResponse(**t.to_dict()) for t in templates]
+
+
+@app.get("/templates/active", response_model=TemplateResponse)
+def get_active_template_endpoint(db: Session = Depends(get_db)):
+    """Возвращает текущий активный шаблон из БД."""
+    from . import crud
+    active = crud.get_active_template(db)
+    if not active:
+        raise HTTPException(status_code=404, detail="Активный шаблон не найден")
+    return TemplateResponse(**active.to_dict())
+
+
+@app.get("/templates/{template_id}", response_model=TemplateResponse)
+def get_template_endpoint(template_id: str, db: Session = Depends(get_db)):
+    """Возвращает метаданные шаблона по ID."""
+    from . import crud
+    tpl = crud.get_template_by_id(db, template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail=f"Шаблон с ID '{template_id}' не найден")
+    return TemplateResponse(**tpl.to_dict())
+
+
+@app.get("/templates/{template_id}/download")
+def download_template_endpoint(template_id: str, db: Session = Depends(get_db)):
+    """Скачивание бинарного файла .docx шаблона прямо из базы данных (BYTEA)."""
+    from . import crud
+    tpl = crud.get_template_by_id(db, template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail=f"Шаблон с ID '{template_id}' не найден")
+
+    ascii_filename = "".join(c for c in tpl.filename if c.isascii() and (c.isalnum() or c in "._-")) or "template.docx"
+    disposition = f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(tpl.filename)}'
+
+    return Response(
+        content=tpl.file_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": disposition, "X-Filename": quote(tpl.filename)},
+    )
+
+
+@app.post("/templates", response_model=TemplateResponse)
+async def upload_template_to_db(
+    file: UploadFile = File(...),
+    name: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    make_active: bool = Form(False),
+    hr_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Сохранение нового .docx шаблона в базу данных PostgreSQL."""
+    import uuid
+    from . import crud
+    content = await file.read()
+    if not content.startswith(b"PK"):
+        raise HTTPException(status_code=400, detail="Файл не является корректным документом .docx")
+
+    template_id = str(uuid.uuid4())[:8]
+    tpl = crud.create_template(
+        db=db,
+        template_id=template_id,
+        name=name or file.filename or "Шаблон Word",
+        filename=file.filename or "template.docx",
+        file_bytes=content,
+        description=description,
+        is_system=False,
+        is_active=make_active,
+        hr_id=hr_id,
+    )
+    return TemplateResponse(**tpl.to_dict())
+
+
+@app.post("/templates/{template_id}/set-default", response_model=TemplateResponse)
+def set_active_template_endpoint(template_id: str, db: Session = Depends(get_db)):
+    """Установка активного шаблона в базе данных."""
+    from . import crud
+    tpl = crud.set_active_template(db, template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail=f"Шаблон с ID '{template_id}' не найден")
+    return TemplateResponse(**tpl.to_dict())
+
+
+@app.delete("/templates/{template_id}")
+def delete_template_endpoint(template_id: str, db: Session = Depends(get_db)):
+    """Удаление пользовательского шаблона из БД."""
+    from . import crud
+    try:
+        success = crud.delete_template(db, template_id)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Шаблон с ID '{template_id}' не найден")
+        return {"status": "ok", "message": f"Шаблон {template_id} удален из БД"}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+
+# --- FieldConfig Endpoints (PostgreSQL) ---
+
+@app.get("/configs/fields", response_model=FieldConfigResponse)
+def get_fields_config_endpoint(config_key: str = "default", db: Session = Depends(get_db)):
+    """Получение JSON-конфигурации полей из базы данных."""
+    from . import crud
+    cfg = crud.get_field_config(db, config_key)
+    if not cfg:
+        default_fields = {
+            "fio": True, "vacancy": True, "total_year_work": True,
+            "citizenship_location": True, "employment": True, "status": True,
+            "pitch": True, "skills_and_tools": True, "project_backround": True,
+            "languages": True, "projects": True, "project_role": True,
+            "project_period": True, "project_tasks": True, "project_achievements": True,
+            "project_skills": True, "education": True, "advanced_training": True
+        }
+        cfg = crud.save_field_config(db, fields=default_fields, config_key=config_key)
+    return FieldConfigResponse(**cfg.to_dict())
+
+
+@app.post("/configs/fields", response_model=FieldConfigResponse)
+def save_fields_config_endpoint(
+    payload: Dict[str, bool],
+    config_key: str = "default",
+    name: Optional[str] = "Конфигурация полей",
+    hr_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Сохранение JSON-конфигурации полей в базу данных."""
+    from . import crud
+    cfg = crud.save_field_config(db, fields=payload, config_key=config_key, name=name or "Конфигурация полей", hr_id=hr_id)
+    return FieldConfigResponse(**cfg.to_dict())
 
 
 if __name__ == "__main__":

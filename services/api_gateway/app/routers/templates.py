@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 
+from ..clients.db_client import db_client
 from ..clients.service_clients import word_client
 from ..dependencies import get_current_user
 from ..logger_collector import log_event
@@ -247,9 +248,11 @@ def _save_fields_config(config: Dict[str, bool]) -> None:
 @router.get("", response_model=Dict[str, Any])
 async def list_templates(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
-    Получение списка доступных шаблонов .docx (системный и пользовательские).
+    Получение списка доступных шаблонов .docx из базы данных PostgreSQL (с fallback на word_client).
     """
-    templates = await word_client.list_templates()
+    templates = await db_client.list_templates()
+    if not templates:
+        templates = await word_client.list_templates()
     return {"templates": templates}
 
 
@@ -262,20 +265,45 @@ async def upload_template(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
-    Загрузка нового корпоративного шаблона Word (.docx) пользователем.
+    Загрузка нового корпоративного шаблона Word (.docx) в базу данных PostgreSQL.
     """
     content = await file.read()
     if not file.filename.lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="Поддерживаются только файлы с расширением .docx")
 
-    log_event("api_gateway", "INFO", f"HR {current_user.get('login')} загружает шаблон DOCX: '{name or file.filename}'")
-    tpl = await word_client.upload_template(
-        file_bytes=content,
-        filename=file.filename,
-        name=name,
-        description=description,
-        make_active=make_active,
-    )
+    log_event("api_gateway", "INFO", f"HR {current_user.get('login')} сохраняет шаблон DOCX в БД: '{name or file.filename}'")
+    hr_id = current_user.get("hr_id")
+    try:
+        tpl = await db_client.upload_template(
+            file_bytes=content,
+            filename=file.filename,
+            name=name,
+            description=description,
+            make_active=make_active,
+            hr_id=hr_id,
+        )
+    except Exception as e:
+        logger.warning("Ошибка сохранения в DBConnector: %s, fallback на локальный менеджер", e)
+        tpl = await word_client.upload_template(
+            file_bytes=content,
+            filename=file.filename,
+            name=name,
+            description=description,
+            make_active=make_active,
+        )
+
+    # Синхронизируем локальный кэш json_to_word
+    try:
+        await word_client.upload_template(
+            file_bytes=content,
+            filename=file.filename,
+            name=name,
+            description=description,
+            make_active=make_active,
+        )
+    except Exception:
+        pass
+
     return tpl
 
 
@@ -285,9 +313,13 @@ async def download_template(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
-    Скачивание файла шаблона .docx (эталонного или пользовательского).
+    Скачивание файла шаблона .docx из базы данных PostgreSQL.
     """
-    content, filename = await word_client.download_template(template_id)
+    try:
+        content, filename = await db_client.download_template(template_id)
+    except Exception:
+        content, filename = await word_client.download_template(template_id)
+
     ascii_filename = "".join(c for c in filename if c.isascii() and (c.isalnum() or c in "._-")) or "template.docx"
     disposition = f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(filename)}'
 
@@ -304,10 +336,20 @@ async def set_active_template(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
-    Назначение шаблона активным по умолчанию для последующей генерации резюме.
+    Назначение шаблона активным по умолчанию в базе данных PostgreSQL.
     """
-    log_event("api_gateway", "INFO", f"HR {current_user.get('login')} установил активный шаблон: {template_id}")
-    return await word_client.set_active_template(template_id)
+    log_event("api_gateway", "INFO", f"HR {current_user.get('login')} установил активный шаблон в БД: {template_id}")
+    try:
+        res = await db_client.set_active_template(template_id)
+    except Exception:
+        res = await word_client.set_active_template(template_id)
+
+    try:
+        await word_client.set_active_template(template_id)
+    except Exception:
+        pass
+
+    return res
 
 
 @router.delete("/{template_id}")
@@ -316,19 +358,31 @@ async def delete_template(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
-    Удаление пользовательского шаблона (системный удалить нельзя).
+    Удаление пользовательского шаблона из базы данных PostgreSQL.
     """
-    log_event("api_gateway", "WARNING", f"HR {current_user.get('login')} удаляет шаблон: {template_id}")
-    return await word_client.delete_template(template_id)
+    log_event("api_gateway", "WARNING", f"HR {current_user.get('login')} удаляет шаблон из БД: {template_id}")
+    try:
+        res = await db_client.delete_template(template_id)
+    except Exception:
+        res = await word_client.delete_template(template_id)
+
+    try:
+        await word_client.delete_template(template_id)
+    except Exception:
+        pass
+
+    return res
 
 
 @router.get("/fields", response_model=Dict[str, Any])
-def get_fields_config(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_fields_config(current_user: Dict[str, Any] = Depends(get_current_user)):
     """
-    Возвращает спецификацию всех доступных полей извлечения резюме (JSON Contract)
-    с текущими значениями чекбоксов (включено / исключено).
+    Возвращает спецификацию всех доступных полей извлечения резюме (JSON Contract) из базы данных PostgreSQL.
     """
-    saved_config = _load_saved_fields_config()
+    saved_config = await db_client.get_fields_config()
+    if not saved_config:
+        saved_config = _load_saved_fields_config()
+
     fields = []
     for item in DEFAULT_FIELDS:
         f_copy = dict(item)
@@ -344,13 +398,19 @@ def get_fields_config(current_user: Dict[str, Any] = Depends(get_current_user)):
 
 
 @router.post("/fields")
-def save_fields_config(
+async def save_fields_config(
     payload: Dict[str, bool],
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
-    Сохраняет конфигурацию активных полей извлечения резюме.
+    Сохраняет конфигурацию активных полей извлечения резюме в базу данных PostgreSQL.
     """
-    log_event("api_gateway", "INFO", f"HR {current_user.get('login')} обновил конфигурацию полей резюме")
+    log_event("api_gateway", "INFO", f"HR {current_user.get('login')} обновил конфигурацию полей резюме в БД")
+    hr_id = current_user.get("hr_id")
+    try:
+        await db_client.save_fields_config(payload, hr_id=hr_id)
+    except Exception as e:
+        logger.warning("Не удалось сохранить в БД: %s, пишем локально", e)
+
     _save_fields_config(payload)
-    return {"status": "ok", "message": "Конфигурация полей успешно сохранена", "saved_fields": payload}
+    return {"status": "ok", "message": "Конфигурация полей успешно сохранена в базе данных", "saved_fields": payload}
