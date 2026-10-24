@@ -75,6 +75,10 @@
         <div class="h-6 w-px bg-outline-variant"></div>
         <nav class="flex items-center gap-5 text-sm font-medium">
           <button id="nav-cv" class="py-5 text-secondary border-b-2 border-secondary font-semibold" onclick="showDashboard()">CVHelper</button>
+          <button id="nav-templates" class="py-5 text-text-muted hover:text-text-primary transition-colors flex items-center gap-1.5" onclick="showTemplates()">
+            <span class="material-symbols-outlined text-[18px]">tune</span>
+            <span>Шаблоны и поля</span>
+          </button>
           <button id="nav-admin" class="py-5 text-text-muted hover:text-text-primary transition-colors" onclick="showAdmin()">Контур Админа / Мониторинг</button>
         </nav>
       </div>
@@ -823,6 +827,159 @@
       </div>
     </div>
 
+    <!-- ==================== VIEW 6: TEMPLATES & SCHEMA CUSTOMIZATION ==================== -->
+    <div id="view-templates" class="hidden flex flex-col gap-8">
+      
+      <!-- Top Header -->
+      <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2 text-xs">
+            <span class="w-2 h-2 rounded-full bg-secondary"></span>
+            <span class="font-bold text-secondary uppercase tracking-wider text-[11px]">Конструктор резюме v3.2</span>
+            <span class="text-text-muted">• Кастомизация JSON & Word</span>
+          </div>
+          <h1 class="font-display font-bold text-2xl text-primary tracking-tight mt-0.5">Настройка полей извлечения и шаблонов Word</h1>
+          <p class="text-sm text-text-muted mt-0.5">Включайте или исключайте поля данных для ИИ и управляйте корпоративными макетами .docx</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="openTemplateInstructionModal()" class="px-4 py-2 rounded-xl bg-surface-low hover:bg-surface-container text-secondary border border-secondary/30 text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors">
+            <span class="material-symbols-outlined text-[18px]">menu_book</span>
+            <span>Инструкция для Word</span>
+          </button>
+          <button onclick="saveAndApplyFields(true)" class="px-5 py-2 rounded-xl bg-secondary hover:bg-secondary-hover text-white text-xs font-semibold flex items-center gap-2 shadow-md transition-all active:scale-[0.99]">
+            <span class="material-symbols-outlined text-[18px]">check_circle</span>
+            <span>Сохранить настройки</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Grid: Left (Fields Selection) & Right (Templates Management) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- LEFT COLUMN: Fields Selector (7 cols) -->
+        <div class="lg:col-span-7 flex flex-col gap-4">
+          <div class="p-5 bg-white rounded-2xl border border-outline-variant shadow-xs flex flex-col gap-5">
+            
+            <!-- Section Header & Presets -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-outline-variant">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-secondary text-[20px]">checklist</span>
+                  <h2 class="font-display font-bold text-base text-primary">Состав полей резюме (JSON Schema)</h2>
+                </div>
+                <p class="text-xs text-text-muted mt-0.5">Отметьте чекбоксами блоки, которые модель должна извлекать</p>
+              </div>
+              <div class="px-3 py-1 rounded-full bg-surface-low border border-surface-container text-xs font-semibold text-secondary flex items-center gap-1.5 shrink-0" id="fields-counter-badge">
+                <span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+                <span id="fields-selected-counter">17 из 17 полей активно</span>
+              </div>
+            </div>
+
+            <!-- Quick Presets -->
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs text-text-muted font-medium">Быстрые пресеты:</span>
+              <button type="button" onclick="applyPreset('all')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] font-semibold text-text-primary transition-colors">
+                Все поля (Классический)
+              </button>
+              <button type="button" onclick="applyPreset('express')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] font-semibold text-text-primary transition-colors">
+                Экспресс-бриф
+              </button>
+              <button type="button" onclick="applyPreset('tech')" class="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-container border border-outline-variant text-[11px] font-semibold text-text-primary transition-colors">
+                IT-стек и опыт
+              </button>
+              <button type="button" onclick="toggleAllFields(false)" class="px-2.5 py-1 rounded-lg hover:bg-surface-low text-[11px] font-medium text-text-muted hover:text-roseText transition-colors ml-auto">
+                Снять все
+              </button>
+            </div>
+
+            <!-- Fields Container (rendered dynamically via JS) -->
+            <div class="flex flex-col gap-4 max-h-[640px] overflow-y-auto pr-1" id="fields-list-container">
+              <!-- Dynamically populated via JS -->
+            </div>
+
+            <!-- Bottom Action Banner for Fields -->
+            <div class="pt-4 border-t border-outline-variant flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div class="text-[11px] text-text-muted">
+                Отключенные поля будут опущены при экспорте резюме в Word
+              </div>
+              <button type="button" onclick="saveAndApplyFields(false)" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-secondary hover:bg-secondary-hover text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-colors">
+                <span class="material-symbols-outlined text-[16px]">menu_book</span>
+                <span>Сформировать инструкцию для Word</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Templates Management & Upload (5 cols) -->
+        <div class="lg:col-span-5 flex flex-col gap-6">
+
+          <!-- Available Templates List -->
+          <div class="p-5 bg-white rounded-2xl border border-outline-variant shadow-xs flex flex-col gap-4">
+            <div class="flex items-center justify-between pb-3 border-b border-outline-variant">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-secondary text-[20px]">layers</span>
+                <h2 class="font-display font-bold text-base text-primary">Библиотека шаблонов Word</h2>
+              </div>
+              <span class="text-xs text-text-muted font-semibold" id="templates-count-badge">1 макет</span>
+            </div>
+
+            <p class="text-xs text-text-secondary">
+              Выберите активный макет для автоматической сборки резюме или скачайте файл для редактирования:
+            </p>
+
+            <!-- Templates List Container -->
+            <div class="flex flex-col gap-3 max-h-[340px] overflow-y-auto pr-1" id="templates-list-container">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Upload New Template Card -->
+          <div class="p-5 bg-white rounded-2xl border border-outline-variant shadow-xs flex flex-col gap-4">
+            <div class="flex items-center gap-2 pb-3 border-b border-outline-variant">
+              <span class="material-symbols-outlined text-secondary text-[20px]">upload_file</span>
+              <h2 class="font-display font-bold text-base text-primary">Загрузить новый макет (.docx)</h2>
+            </div>
+
+            <form onsubmit="handleTemplateUpload(event)" class="flex flex-col gap-3.5">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-text-primary">Название шаблона:</label>
+                <input type="text" id="upload-tpl-name" placeholder="Например: Корпоративный Сбер / Tech Profile" required class="h-10 px-3 rounded-xl bg-surface-low border border-outline-variant text-xs text-text-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-secondary/40">
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-text-primary">Краткое описание (опционально):</label>
+                <input type="text" id="upload-tpl-desc" placeholder="Одноколоночный макет со строгим шрифтом" class="h-10 px-3 rounded-xl bg-surface-low border border-outline-variant text-xs text-text-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-secondary/40">
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-text-primary">Файл документа (.docx):</label>
+                <div id="tpl-dropzone" onclick="document.getElementById('upload-tpl-file').click()" class="p-4 rounded-xl border-2 border-dashed border-outline-variant hover:border-secondary bg-surface-low text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-1">
+                  <input type="file" id="upload-tpl-file" accept=".docx" onchange="handleTemplateFileSelect(event)" class="hidden" required>
+                  <span class="material-symbols-outlined text-secondary text-[24px]">cloud_upload</span>
+                  <span class="text-xs font-semibold text-primary" id="tpl-file-label">Выберите файл .docx или перетащите сюда</span>
+                  <span class="text-[10px] text-text-muted">Только валидные документы Microsoft Word</span>
+                </div>
+              </div>
+
+              <label class="flex items-center gap-2 cursor-pointer select-none pt-1">
+                <input type="checkbox" id="upload-tpl-make-active" checked class="w-4 h-4 rounded text-secondary focus:ring-secondary cursor-pointer">
+                <span class="text-xs text-text-primary font-medium">Сделать активным сразу после загрузки</span>
+              </label>
+
+              <button type="submit" id="btn-upload-tpl" class="mt-1 h-10 px-4 rounded-xl bg-secondary hover:bg-secondary-hover text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-colors">
+                <span class="material-symbols-outlined text-[16px]">add_circle</span>
+                <span>Добавить шаблон в библиотеку</span>
+              </button>
+            </form>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
   </main>
 
   <!-- ==================== UPLOAD MODAL DIALOG ==================== -->
@@ -977,6 +1134,142 @@
         <button id="btn-submit-rework" onclick="submitReworkWithComment()" class="px-5 py-2 rounded-xl bg-roseText hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors">
           <span class="material-symbols-outlined text-[16px]">undo</span>
           <span>Отправить на доработку</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: TEMPLATE INSTRUCTION ==================== -->
+  <div id="modal-template-instruction" class="hidden fixed inset-0 z-50 bg-primary/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl border border-outline-variant shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 flex items-center justify-between border-b border-outline-variant bg-surface-low">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-[24px]">menu_book</span>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-primary">Инструкция по настройке шаблона в Microsoft Word</h3>
+            <p class="text-xs text-text-muted" id="instruction-modal-subtitle">Список тегов и правила верстки под выбранные вами поля</p>
+          </div>
+        </div>
+        <button onclick="closeTemplateInstructionModal()" class="w-8 h-8 rounded-full hover:bg-surface-container text-text-muted flex items-center justify-center">
+          <span class="material-symbols-outlined text-[18px]">close</span>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-6 overflow-y-auto flex flex-col gap-6 text-xs text-text-primary">
+        
+        <!-- Step 1: Base Download -->
+        <div class="p-4 rounded-xl bg-blue-50/60 border border-blue-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-secondary text-[24px] shrink-0 mt-0.5">download_for_offline</span>
+            <div>
+              <div class="font-bold text-primary text-sm">Шаг 1. Скачайте основу шаблона</div>
+              <div class="text-text-muted text-[11px] mt-0.5">Чтобы не настраивать отступы и таблицы с нуля, возьмите готовый эталонный .docx-шаблон и откройте его в Word</div>
+            </div>
+          </div>
+          <button onclick="downloadActiveOrBaseTemplate()" class="px-4 py-2 rounded-xl bg-white hover:bg-surface-low border border-outline-variant text-secondary font-semibold text-xs flex items-center gap-1.5 shrink-0 shadow-xs transition-colors">
+            <span class="material-symbols-outlined text-[16px]">file_download</span>
+            <span>Скачать основу (.docx)</span>
+          </button>
+        </div>
+
+        <!-- Step 2: Active Selected Tags -->
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <div class="font-bold text-primary text-sm flex items-center gap-2">
+              <span class="w-5 h-5 rounded-full bg-surface-container text-secondary flex items-center justify-center text-[11px] font-bold">2</span>
+              <span>Шаг 2. Вставьте теги в документ под выбранные вами поля</span>
+            </div>
+            <button onclick="copyAllActiveTags()" class="px-3 py-1 rounded-lg bg-surface-low hover:bg-surface-container text-secondary font-semibold text-[11px] flex items-center gap-1 border border-outline-variant transition-colors">
+              <span class="material-symbols-outlined text-[14px]">copy_all</span>
+              <span>Скопировать все теги</span>
+            </button>
+          </div>
+          <p class="text-[11px] text-text-muted">
+            При генерации резюме система автоматически подставит реальные данные кандидата на место тегов в двойных фигурных скобках <code>{{ tag }}</code>:
+          </p>
+
+          <!-- Dynamic Tags Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="instruction-tags-grid">
+            <!-- Dynamically populated via JS -->
+          </div>
+
+          <!-- Project Loop block (if projects enabled) -->
+          <div id="instruction-project-loop-container" class="mt-2 p-3.5 rounded-xl bg-surface-low border border-outline-variant flex flex-col gap-2 font-mono text-[11px]">
+            <div class="flex items-center justify-between text-text-secondary font-sans font-semibold text-xs">
+              <span class="flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-secondary text-[16px]">code</span>
+                Специальный блок: Цикл проектов и опыта работы
+              </span>
+              <button onclick="copyProjectLoopCode()" class="text-secondary hover:underline flex items-center gap-0.5 text-[11px] font-medium font-sans">
+                <span class="material-symbols-outlined text-[13px]">content_copy</span> Копировать блок цикла
+              </button>
+            </div>
+            <div class="p-2.5 rounded-lg bg-primary text-gray-200 text-[10px] overflow-x-auto leading-relaxed whitespace-pre font-mono" id="code-project-loop">{% for p in projects %}
+{{ p.role_in_project }} | {{ p.project_place_and_work_time }}
+Стек: {{ p.skills_tools_in_project }}
+Задачи:
+{% for t in p.task_on_project %}• {{ t }}
+{% endfor %}
+Достижения:
+{% for a in p.achievements_in_project %}• {{ a }}
+{% endfor %}
+{% endfor %}</div>
+          </div>
+        </div>
+
+        <!-- Step 3: Pro Formatting Tips -->
+        <div class="flex flex-col gap-2">
+          <div class="font-bold text-primary text-sm flex items-center gap-2">
+            <span class="w-5 h-5 rounded-full bg-surface-container text-secondary flex items-center justify-center text-[11px] font-bold">3</span>
+            <span>Шаг 3. Советы по форматированию в Microsoft Word</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="p-3 rounded-xl bg-surface-low border border-outline-variant flex flex-col gap-1">
+              <span class="font-bold text-primary text-xs flex items-center gap-1">
+                <span class="material-symbols-outlined text-secondary text-[16px]">format_bold</span> Стилизация
+              </span>
+              <p class="text-[11px] text-text-muted">Красьте теги в Word, делайте их жирными или курсивом — сгенерированный текст полностью унаследует это оформление.</p>
+            </div>
+            <div class="p-3 rounded-xl bg-surface-low border border-outline-variant flex flex-col gap-1">
+              <span class="font-bold text-primary text-xs flex items-center gap-1">
+                <span class="material-symbols-outlined text-secondary text-[16px]">grid_view</span> Таблицы и сетка
+              </span>
+              <p class="text-[11px] text-text-muted">Теги можно вставлять внутрь ячеек таблиц без границ для создания аккуратной двухколоночной корпоративной верстки.</p>
+            </div>
+            <div class="p-3 rounded-xl bg-surface-low border border-outline-variant flex flex-col gap-1">
+              <span class="font-bold text-primary text-xs flex items-center gap-1">
+                <span class="material-symbols-outlined text-secondary text-[16px]">visibility_off</span> Условия {% if %}
+              </span>
+              <p class="text-[11px] text-text-muted">Чтобы пустой блок не печатался, оборачивайте его: <code>{% if pitch %}{{ pitch }}{% endif %}</code>.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Upload Ready Template -->
+        <div class="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-emeraldText text-[24px] shrink-0 mt-0.5">task_alt</span>
+            <div>
+              <div class="font-bold text-primary text-sm">Шаг 4. Сохраните и загрузите готовый шаблон</div>
+              <div class="text-text-muted text-[11px] mt-0.5">После редактирования сохраните файл .docx и добавьте его в систему в блоке «Библиотека шаблонов»</div>
+            </div>
+          </div>
+          <button onclick="closeTemplateInstructionModal(); showTemplates(); setTimeout(() => document.getElementById('upload-tpl-name').focus(), 200);" class="px-4 py-2 rounded-xl bg-emeraldText hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shrink-0 shadow-xs transition-colors">
+            <span>Перейти к загрузке</span>
+            <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-4 bg-surface-low border-t border-outline-variant flex justify-end gap-3">
+        <button onclick="closeTemplateInstructionModal()" class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold">
+          Понятно, закрыть
         </button>
       </div>
     </div>
@@ -1286,6 +1579,7 @@
       document.getElementById('view-validation').classList.add('hidden');
       document.getElementById('view-result').classList.add('hidden');
       document.getElementById('view-admin').classList.add('hidden');
+      document.getElementById('view-templates').classList.add('hidden');
       if (adminInterval) { clearInterval(adminInterval); adminInterval = null; }
     }
 
@@ -1318,6 +1612,14 @@
       }
     }
 
+    function showTemplates() {
+      hideAllViews();
+      document.getElementById('main-header').classList.remove('hidden');
+      document.getElementById('view-templates').classList.remove('hidden');
+      updateNavActive('nav-templates');
+      loadTemplatesData();
+    }
+
     function showAdmin() {
       hideAllViews();
       document.getElementById('main-header').classList.remove('hidden');
@@ -1330,13 +1632,13 @@
     }
 
     function updateNavActive(activeId) {
-      ['nav-cv', 'nav-admin'].forEach(id => {
+      ['nav-cv', 'nav-templates', 'nav-admin'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         if (id === activeId) {
-          el.className = 'py-5 text-secondary border-b-2 border-secondary font-semibold';
+          el.className = 'py-5 text-secondary border-b-2 border-secondary font-semibold flex items-center gap-1.5';
         } else {
-          el.className = 'py-5 text-text-muted hover:text-text-primary transition-colors';
+          el.className = 'py-5 text-text-muted hover:text-text-primary transition-colors flex items-center gap-1.5';
         }
       });
     }
@@ -2002,7 +2304,8 @@
       btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">sync</span><span>Генерация DOCX...</span>`;
 
       try {
-        const resp = await fetch(`${API_BASE}/api/v1/cv/${activeCvId}/validate`, {
+        const tplParam = window.currentActiveTemplateId ? `?template_id=${encodeURIComponent(window.currentActiveTemplateId)}` : '';
+        const resp = await fetch(`${API_BASE}/api/v1/cv/${activeCvId}/validate${tplParam}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -2246,6 +2549,369 @@
       const text = list.map(l => `${l.timestamp} [${l.level}] [${l.service}]: ${l.message}`).join('\n');
       navigator.clipboard.writeText(text);
       alert('Логи скопированы в буфер обмена');
+    }
+
+    // ==================== TEMPLATES & SCHEMA CUSTOMIZATION LOGIC ====================
+
+    let currentFieldsConfig = [];
+    let currentTemplatesList = [];
+    let activeTemplateId = 'default';
+    let selectedTemplateUploadFile = null;
+
+    async function loadTemplatesData() {
+      try {
+        // 1. Load Fields
+        const fResp = await fetch(`${API_BASE}/api/v1/templates/fields`, {
+          headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (fResp.ok) {
+          const fData = await fResp.json();
+          currentFieldsConfig = fData.fields || [];
+          renderFieldsList();
+        }
+
+        // 2. Load Templates
+        const tResp = await fetch(`${API_BASE}/api/v1/templates`, {
+          headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (tResp.ok) {
+          const tData = await tResp.json();
+          currentTemplatesList = tData.templates || [];
+          const act = currentTemplatesList.find(t => t.is_active);
+          if (act) {
+            activeTemplateId = act.id;
+            window.currentActiveTemplateId = act.id;
+          }
+          renderTemplatesList();
+        }
+      } catch (err) {
+        console.error('Ошибка загрузки данных шаблонов:', err);
+      }
+    }
+
+    function renderFieldsList() {
+      const container = document.getElementById('fields-list-container');
+      if (!container) return;
+
+      const categories = [
+        { id: 'personal', name: 'Личные данные и статус', icon: 'account_circle' },
+        { id: 'competencies', name: 'Квалификация и ключевые компетенции', icon: 'psychology' },
+        { id: 'experience', name: 'Опыт работы и проекты', icon: 'work' },
+        { id: 'education', name: 'Образование и курсы', icon: 'school' }
+      ];
+
+      container.innerHTML = categories.map(cat => {
+        const catFields = currentFieldsConfig.filter(f => f.category === cat.id);
+        if (catFields.length === 0) return '';
+
+        return `
+          <div class="p-3.5 rounded-xl bg-surface-low border border-surface-container flex flex-col gap-2.5">
+            <div class="flex items-center gap-2 text-xs font-bold text-primary">
+              <span class="material-symbols-outlined text-secondary text-[18px]">${cat.icon}</span>
+              <span>${cat.name}</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              ${catFields.map(f => `
+                <label class="p-2.5 rounded-lg bg-white border border-outline-variant hover:border-secondary/40 flex items-start gap-2.5 cursor-pointer transition-colors select-none">
+                  <input type="checkbox" data-key="${f.key}" ${f.enabled ? 'checked' : ''} onchange="onFieldCheckboxChange('${f.key}', this.checked)" class="mt-0.5 w-4 h-4 rounded text-secondary focus:ring-secondary cursor-pointer">
+                  <div class="flex-1 flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="font-bold text-xs text-primary">${f.name}</span>
+                      <button type="button" onclick="event.preventDefault(); copyTag('${f.tag}', this)" title="Скопировать тег" class="px-1.5 py-0.2 rounded bg-surface-low hover:bg-surface-container border border-outline-variant text-[10px] font-mono text-secondary flex items-center gap-0.5 transition-colors">
+                        <span>${f.tag}</span>
+                        <span class="material-symbols-outlined text-[12px]">content_copy</span>
+                      </button>
+                    </div>
+                    <p class="text-[11px] text-text-muted leading-tight">${f.description}</p>
+                  </div>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      updateFieldsCounter();
+    }
+
+    function onFieldCheckboxChange(key, isChecked) {
+      const f = currentFieldsConfig.find(item => item.key === key);
+      if (f) f.enabled = isChecked;
+      updateFieldsCounter();
+    }
+
+    function updateFieldsCounter() {
+      const total = currentFieldsConfig.length;
+      const active = currentFieldsConfig.filter(f => f.enabled).length;
+      const el = document.getElementById('fields-selected-counter');
+      if (el) el.textContent = `${active} из ${total} полей активно`;
+    }
+
+    function applyPreset(name) {
+      if (name === 'all') {
+        currentFieldsConfig.forEach(f => f.enabled = true);
+      } else if (name === 'express') {
+        const allowed = ['fio', 'vacancy', 'total_year_work', 'pitch', 'skills_and_tools', 'projects', 'project_role', 'project_period', 'project_skills'];
+        currentFieldsConfig.forEach(f => f.enabled = allowed.includes(f.key));
+      } else if (name === 'tech') {
+        const allowed = ['fio', 'vacancy', 'pitch', 'skills_and_tools', 'project_backround', 'projects', 'project_role', 'project_period', 'project_tasks', 'project_achievements', 'project_skills', 'languages'];
+        currentFieldsConfig.forEach(f => f.enabled = allowed.includes(f.key));
+      }
+      renderFieldsList();
+    }
+
+    function toggleAllFields(enable) {
+      currentFieldsConfig.forEach(f => f.enabled = enable);
+      renderFieldsList();
+    }
+
+    async function saveAndApplyFields(silent = false) {
+      const payload = {};
+      currentFieldsConfig.forEach(f => {
+        payload[f.key] = !!f.enabled;
+      });
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/v1/templates/fields`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentToken}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (resp.ok) {
+          localStorage.setItem('hrcv_fields_config', JSON.stringify(payload));
+          if (silent) {
+            alert('Конфигурация полей успешно сохранена!');
+          } else {
+            openTemplateInstructionModal();
+          }
+        }
+      } catch (err) {
+        console.error('Ошибка сохранения полей:', err);
+        if (!silent) openTemplateInstructionModal();
+      }
+    }
+
+    function openTemplateInstructionModal() {
+      const modal = document.getElementById('modal-template-instruction');
+      if (!modal) return;
+
+      const activeFields = currentFieldsConfig.filter(f => f.enabled);
+      document.getElementById('instruction-modal-subtitle').textContent =
+        `Список тегов и правила верстки под выбранные вами ${activeFields.length} полей`;
+
+      const grid = document.getElementById('instruction-tags-grid');
+      grid.innerHTML = activeFields.map(f => `
+        <div class="p-3 rounded-xl bg-surface-low border border-outline-variant flex items-center justify-between gap-2">
+          <div class="flex flex-col">
+            <span class="font-bold text-primary text-xs">${f.name}</span>
+            <span class="text-[10px] font-mono text-secondary">${f.tag}</span>
+          </div>
+          <button onclick="copyTag('${f.tag}', this)" class="px-2.5 py-1 rounded-lg bg-white hover:bg-surface-container border border-outline-variant text-[11px] font-semibold text-text-primary flex items-center gap-1 transition-colors">
+            <span class="material-symbols-outlined text-[14px]">content_copy</span>
+            <span>Копировать</span>
+          </button>
+        </div>
+      `).join('');
+
+      const hasProjects = activeFields.some(f => f.key === 'projects' || f.key.startsWith('project_'));
+      const loopBlock = document.getElementById('instruction-project-loop-container');
+      if (loopBlock) {
+        if (hasProjects) {
+          loopBlock.classList.remove('hidden');
+        } else {
+          loopBlock.classList.add('hidden');
+        }
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeTemplateInstructionModal() {
+      const modal = document.getElementById('modal-template-instruction');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function copyTag(text, btn) {
+      navigator.clipboard.writeText(text);
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[14px] text-emeraldText">check</span><span class="text-emeraldText font-bold">Скопировано!</span>`;
+        setTimeout(() => { btn.innerHTML = orig; }, 1500);
+      }
+    }
+
+    function copyAllActiveTags() {
+      const activeFields = currentFieldsConfig.filter(f => f.enabled);
+      const text = activeFields.map(f => `${f.name}: ${f.tag}`).join('\n');
+      navigator.clipboard.writeText(text);
+      alert(`Скопировано ${activeFields.length} тегов в буфер обмена!`);
+    }
+
+    function copyProjectLoopCode() {
+      const code = document.getElementById('code-project-loop').textContent.trim();
+      navigator.clipboard.writeText(code);
+      alert('Код цикла проектов скопирован в буфер обмена!');
+    }
+
+    function downloadActiveOrBaseTemplate() {
+      const id = activeTemplateId || 'default';
+      window.open(`${API_BASE}/api/v1/templates/${id}/download`, '_blank');
+    }
+
+    function renderTemplatesList() {
+      const container = document.getElementById('templates-list-container');
+      if (!container) return;
+
+      document.getElementById('templates-count-badge').textContent = `${currentTemplatesList.length} макетов`;
+
+      container.innerHTML = currentTemplatesList.map(t => {
+        const isActive = t.is_active;
+        const sizeKb = Math.round(t.size_bytes / 1024);
+
+        return `
+          <div class="p-3.5 rounded-xl border ${isActive ? 'bg-secondary/5 border-secondary shadow-xs' : 'bg-surface-low border-outline-variant'} flex items-start justify-between gap-3 transition-colors">
+            <div class="flex items-start gap-3">
+              <div class="w-9 h-9 rounded-xl ${isActive ? 'bg-secondary text-white' : 'bg-surface-container text-secondary'} flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-[20px]">article</span>
+              </div>
+              <div class="flex flex-col">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-xs text-primary">${t.name}</span>
+                  ${isActive ? '<span class="px-2 py-0.2 rounded-full bg-emeraldBg text-emeraldText text-[10px] font-bold">Активен</span>' : ''}
+                  ${t.is_system ? '<span class="px-1.5 py-0.2 rounded bg-surface-container text-text-muted text-[10px]">Системный</span>' : ''}
+                </div>
+                <p class="text-[11px] text-text-muted mt-0.5">${t.description}</p>
+                <div class="flex items-center gap-2 text-[10px] text-text-secondary mt-1">
+                  <span>${t.filename}</span>
+                  <span>•</span>
+                  <span>${sizeKb} KB</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 shrink-0">
+              ${!isActive ? `
+                <button onclick="setActiveTemplate('${t.id}')" title="Сделать активным по умолчанию" class="px-2.5 py-1 rounded-lg bg-white hover:bg-secondary hover:text-white border border-outline-variant text-xs font-semibold text-text-primary transition-colors">
+                  Выбрать
+                </button>
+              ` : ''}
+              <button onclick="downloadTemplate('${t.id}')" title="Скачать файл шаблона" class="p-1 rounded-lg bg-white hover:bg-surface-container border border-outline-variant text-secondary transition-colors">
+                <span class="material-symbols-outlined text-[18px]">download</span>
+              </button>
+              ${!t.is_system ? `
+                <button onclick="deleteTemplate('${t.id}', '${t.name}')" title="Удалить макет" class="p-1 rounded-lg bg-white hover:bg-rose-50 border border-outline-variant text-roseText transition-colors">
+                  <span class="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function setActiveTemplate(id) {
+      try {
+        const resp = await fetch(`${API_BASE}/api/v1/templates/${id}/set-default`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (resp.ok) {
+          activeTemplateId = id;
+          window.currentActiveTemplateId = id;
+          currentTemplatesList.forEach(t => t.is_active = (t.id === id));
+          renderTemplatesList();
+        }
+      } catch (e) {
+        console.error('Ошибка смены шаблона:', e);
+      }
+    }
+
+    async function downloadTemplate(id) {
+      window.open(`${API_BASE}/api/v1/templates/${id}/download`, '_blank');
+    }
+
+    async function deleteTemplate(id, name) {
+      if (!confirm(`Удалить пользовательский шаблон "${name}"?`)) return;
+      try {
+        const resp = await fetch(`${API_BASE}/api/v1/templates/${id}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        if (resp.ok) {
+          loadTemplatesData();
+        }
+      } catch (e) {
+        console.error('Ошибка удаления шаблона:', e);
+      }
+    }
+
+    function handleTemplateFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.docx')) {
+        alert('Пожалуйста, выберите файл с расширением .docx');
+        event.target.value = '';
+        return;
+      }
+      selectedTemplateUploadFile = file;
+      document.getElementById('tpl-file-label').textContent = `${file.name} (${Math.round(file.size / 1024)} KB)`;
+      const nameInput = document.getElementById('upload-tpl-name');
+      if (!nameInput.value.trim()) {
+        nameInput.value = file.name.replace(/\.docx$/i, '');
+      }
+    }
+
+    async function handleTemplateUpload(e) {
+      e.preventDefault();
+      if (!selectedTemplateUploadFile) {
+        alert('Пожалуйста, выберите файл .docx для загрузки');
+        return;
+      }
+
+      const name = document.getElementById('upload-tpl-name').value.trim();
+      const desc = document.getElementById('upload-tpl-desc').value.trim();
+      const makeActive = document.getElementById('upload-tpl-make-active').checked;
+      const btn = document.getElementById('btn-upload-tpl');
+
+      btn.disabled = true;
+      btn.innerHTML = `<span class="material-symbols-outlined text-[16px] animate-spin">sync</span><span>Загрузка шаблона...</span>`;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedTemplateUploadFile);
+        if (name) formData.append('name', name);
+        if (desc) formData.append('description', desc);
+        formData.append('make_active', makeActive);
+
+        const resp = await fetch(`${API_BASE}/api/v1/templates/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${currentToken}` },
+          body: formData
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'Ошибка загрузки шаблона');
+        }
+
+        alert('Шаблон успешно добавлен в библиотеку!');
+        selectedTemplateUploadFile = null;
+        document.getElementById('upload-tpl-file').value = '';
+        document.getElementById('tpl-file-label').textContent = 'Выберите файл .docx или перетащите сюда';
+        document.getElementById('upload-tpl-name').value = '';
+        document.getElementById('upload-tpl-desc').value = '';
+
+        loadTemplatesData();
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">add_circle</span><span>Добавить шаблон в библиотеку</span>`;
+      }
     }
   </script>
 </body>

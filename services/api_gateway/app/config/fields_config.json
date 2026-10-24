@@ -1,0 +1,20 @@
+{
+  "fio": true,
+  "vacancy": true,
+  "total_year_work": true,
+  "citizenship_location": true,
+  "employment": true,
+  "status": true,
+  "pitch": true,
+  "skills_and_tools": true,
+  "project_backround": true,
+  "languages": true,
+  "projects": true,
+  "project_role": true,
+  "project_period": true,
+  "project_tasks": true,
+  "project_achievements": true,
+  "project_skills": true,
+  "education": true,
+  "advanced_training": true
+}

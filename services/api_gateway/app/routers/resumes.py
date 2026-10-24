@@ -174,14 +174,16 @@ async def upload_cv(
 async def validate_and_generate_docx(
     cv_id: int,
     validated_json: Dict[str, Any],
+    template_id: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
     ФТ-HR.3 + ФТ-HR.4: Подтверждение проверенного HR-специалистом JSON,
-    сохранение в БД, вызов JSONToWord для генерации .docx, загрузка в S3
-    и перевод резюме в финальный статус 'Готово'.
+    сохранение в БД, вызов JSONToWord для генерации .docx по выбранному шаблону,
+    загрузка в S3 и перевод резюме в финальный статус 'Готово'.
     """
-    log_event("api_gateway", "INFO", f"[CV {cv_id}] Получен подтвержденный JSON от HR. Начинаем валидацию и генерацию docx")
+    selected_template = template_id or validated_json.get("_template_id")
+    log_event("api_gateway", "INFO", f"[CV {cv_id}] Получен подтвержденный JSON от HR (шаблон: {selected_template or 'активный'}). Начинаем валидацию и генерацию docx")
 
     cv_record = await db_client.get_cv(cv_id)
     if not cv_record:
@@ -192,7 +194,7 @@ async def validate_and_generate_docx(
     await db_client.update_cv(cv_id, {"jsonb": validated_json, "status": CVStatus.DOCX_GENERATION.value})
 
     # 2. Вызов сервиса JSONToWord (docxtpl)
-    docx_bytes = await word_client.generate(validated_json)
+    docx_bytes = await word_client.generate(validated_json, template_id=selected_template)
 
     # 3. Сохранение файла в хранилище S3 через DBConnector
     fio_slug = validated_json.get("fio", "candidate").replace(" ", "_")

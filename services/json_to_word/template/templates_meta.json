@@ -1,0 +1,13 @@
+{
+  "active_template_id": "default",
+  "templates": {
+    "default": {
+      "id": "default",
+      "name": "Классический корпоративный шаблон (Системный)",
+      "description": "Стандартный двухколоночный корпоративный шаблон HRCVHelper с полной поддержкой всех полей",
+      "filename": "placeholders_cv_docx.docx",
+      "is_system": true,
+      "created_at": "2026-10-21T00:00:00Z"
+    }
+  }
+}

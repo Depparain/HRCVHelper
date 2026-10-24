@@ -105,6 +105,8 @@ def _build_projects(projects: Any) -> List[Dict[str, Any]]:
         items.append(
             {
                 "project_place_and_work_time": place_time,
+                "place_time_raw": raw_place,
+                "period": raw_period,
                 "role_in_project": role_clean,
                 "task_on_project": _clean_str_list(project.get("task_on_project")),
                 "achievements_in_project": _clean_str_list(project.get("achievements_in_project")),
@@ -128,6 +130,14 @@ def generate_cv(json_path: Path | str, template_path: Path | str, output_path: P
     data = _load_data(json_file)
     doc = DocxTemplate(str(template_file))
 
+    raw_skills = data.get("skills_and_tools")
+    if isinstance(raw_skills, list):
+        skills_list = [str(s).strip() for s in raw_skills if str(s).strip()]
+    elif isinstance(raw_skills, str):
+        skills_list = [s.strip() for s in raw_skills.split("\n") if s.strip()]
+    else:
+        skills_list = []
+
     context: Dict[str, Any] = {
         "fio": str(data.get("fio") or ""),
         "vacancy": str(data.get("vacancy") or ""),
@@ -135,8 +145,11 @@ def generate_cv(json_path: Path | str, template_path: Path | str, output_path: P
         "project_backround": str(data.get("project_backround") or ""),
         "pitch": str(data.get("pitch") or ""),
         "skills_tools": _format_skills_string(data.get("skills_and_tools")),
+        "skills_and_tools": skills_list,
         "education": _format_education_string(data.get("education")),
+        "education_list": data.get("education") if isinstance(data.get("education"), list) else [],
         "courses": _format_courses_strings(data.get("advanced_training")),
+        "advanced_training": data.get("advanced_training") if isinstance(data.get("advanced_training"), list) else [],
         "languages": str(data.get("languages") or ""),
         "citizenship_location": str(data.get("citizenship_location") or ""),
         "employment": str(data.get("employment") or ""),

@@ -11,6 +11,7 @@ from .logger_collector import setup_in_memory_logging, log_event
 from .routers.admin import router as admin_router
 from .routers.auth import router as auth_router
 from .routers.resumes import router as resumes_router
+from .routers.templates import router as templates_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api_gateway")
@@ -47,6 +48,7 @@ setup_exception_handlers(app)
 # Подключение модульных роутеров
 app.include_router(auth_router)
 app.include_router(resumes_router)
+app.include_router(templates_router)
 app.include_router(admin_router)
 
 
