@@ -133,7 +133,7 @@ export function renderCVTable() {
       `;
     } else if (c.status === 'Готово') {
       actionBtn = `
-        <button onclick="openResultPage(${c.cv_id})" class="px-3 py-1.5 rounded-lg bg-emeraldText hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs transition-colors">
+        <button onclick="downloadCV(${c.cv_id})" class="px-3 py-1.5 rounded-lg bg-emeraldText hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs transition-colors" title="Скачать документ .docx">
           <span class="material-symbols-outlined text-[15px]">download</span>
           <span>.docx</span>
         </button>
@@ -162,7 +162,7 @@ export function renderCVTable() {
               ${initials}
             </div>
             <div class="flex flex-col">
-              <span class="font-bold text-primary ${!isProcessing ? 'hover:text-secondary cursor-pointer' : ''}" onclick="${!isProcessing ? `openValidationPage(${c.cv_id})` : ''}">${fio}</span>
+              <span class="font-bold text-primary ${!isProcessing ? 'hover:text-secondary cursor-pointer' : ''}" onclick="${!isProcessing ? (c.status === 'Готово' ? `openResultPage(${c.cv_id})` : `openValidationPage(${c.cv_id})`) : ''}">${fio}</span>
               <span class="text-[11px] text-text-muted">${vac}${exp ? ' • ' + exp : ''}</span>
             </div>
           </div>

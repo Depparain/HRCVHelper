@@ -184,7 +184,25 @@ export async function setActiveTemplate(id) {
 }
 
 export async function downloadTemplate(id) {
-  window.open(`${API_BASE}/api/v1/templates/${id}/download`, '_blank');
+  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  const fallbackUrl = `${API_BASE}/api/v1/templates/${id}/download${tokenParam}`;
+  try {
+    const resp = await fetch(`${API_BASE}/api/v1/templates/${id}/download`, {
+      headers: state.getAuthHeaders()
+    });
+    if (!resp.ok) throw new Error('Ошибка скачивания шаблона');
+    const blob = await resp.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `template_${id}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+  } catch (e) {
+    window.location.href = fallbackUrl;
+  }
 }
 
 export async function deleteTemplate(id, name) {

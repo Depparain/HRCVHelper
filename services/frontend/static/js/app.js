@@ -95,6 +95,7 @@ const exposedMethods = {
   appendReworkChip: modals.appendReworkChip,
   submitReworkWithComment: modals.submitReworkWithComment,
   openResultPage: modals.openResultPage,
+  downloadCV: modals.downloadCV,
   copyDownloadUrl: modals.copyDownloadUrl,
   openTemplateInstructionModal: modals.openTemplateInstructionModal,
   closeTemplateInstructionModal: modals.closeTemplateInstructionModal,

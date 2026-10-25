@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { addSessionNotification } from '../notifications.js';
 import { hideAllViews, showDashboard } from '../views/auth.js';
 import { loadCVs } from '../views/dashboard.js';
+import { downloadTemplate } from '../views/templates.js';
 
 // --- Rework Modal ---
 
@@ -62,6 +63,37 @@ export async function submitReworkWithComment() {
 
 // --- Result Download View / Modal ---
 
+export async function downloadCV(cvId = null, filename = null) {
+  const targetId = cvId || state.activeCvId;
+  if (!targetId) return;
+
+  const targetFilename = filename || document.getElementById('res-doc-filename')?.textContent || `resume_${targetId}.docx`;
+  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  const fallbackUrl = `${API_BASE}/api/v1/cv/${targetId}/download${tokenParam}`;
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/v1/cv/${targetId}/download`, {
+      headers: state.getAuthHeaders(),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Ошибка скачивания файла');
+    }
+    const blob = await resp.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = targetFilename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+  } catch (err) {
+    console.warn('Blob download failed, using direct URL:', err);
+    window.location.href = fallbackUrl;
+  }
+}
+
 export async function openResultPage(cvId, record) {
   state.activeCvId = cvId;
   hideAllViews();
@@ -87,12 +119,18 @@ export async function openResultPage(cvId, record) {
 
   document.getElementById('res-doc-filename').textContent = filename;
   const downloadBtn = document.getElementById('res-download-btn');
-  downloadBtn.href = `${API_BASE}/api/v1/cv/${cvId}/download`;
+  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  downloadBtn.href = `${API_BASE}/api/v1/cv/${cvId}/download${tokenParam}`;
   downloadBtn.setAttribute('download', filename);
+  downloadBtn.onclick = (e) => {
+    e.preventDefault();
+    downloadCV(cvId, filename);
+  };
 }
 
 export function copyDownloadUrl() {
-  const url = `${API_BASE}/api/v1/cv/${state.activeCvId}/download`;
+  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  const url = `${API_BASE}/api/v1/cv/${state.activeCvId}/download${tokenParam}`;
   navigator.clipboard.writeText(url);
   const textEl = document.getElementById('copy-link-text');
   textEl.textContent = 'Скопировано!';
@@ -165,5 +203,5 @@ export function copyProjectLoopCode() {
 
 export function downloadActiveOrBaseTemplate() {
   const id = state.activeTemplateId || 'default';
-  window.open(`${API_BASE}/api/v1/templates/${id}/download`, '_blank');
+  downloadTemplate(id);
 }
