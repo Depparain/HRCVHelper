@@ -2,6 +2,9 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HRCVHelper — Enterprise CV Suite</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700&display=swap">
@@ -708,10 +711,10 @@
             </div>
 
             <div class="flex flex-col sm:flex-row gap-3 pt-3">
-              <a id="res-download-btn" href="#" download class="flex-1 h-11 rounded-xl bg-secondary hover:bg-secondary-hover text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-md">
+              <button id="res-download-btn" type="button" onclick="downloadCV()" class="flex-1 h-11 rounded-xl bg-secondary hover:bg-secondary-hover text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-colors">
                 <span class="material-symbols-outlined text-[20px]">download</span>
                 <span>Скачать готовый .docx</span>
-              </a>
+              </button>
               <button onclick="copyDownloadUrl()" class="px-5 h-11 rounded-xl bg-white border border-outline-variant hover:bg-surface-low text-text-primary text-sm font-semibold flex items-center justify-center gap-2 shadow-xs">
                 <span class="material-symbols-outlined text-[18px] text-secondary">link</span>
                 <span id="copy-link-text">Копировать ссылку</span>
@@ -1274,6 +1277,6 @@
        /api/v1/auth/login
        /api/v1/cv/upload
   -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=2.0"></script>
 </body>
 </html>

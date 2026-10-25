@@ -45,8 +45,9 @@ export const state = {
 
   getAuthHeaders(extraHeaders = {}) {
     const headers = { ...extraHeaders };
-    if (this.currentToken) {
-      headers['Authorization'] = `Bearer ${this.currentToken}`;
+    const token = this.currentToken || localStorage.getItem('hrcv_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
   }

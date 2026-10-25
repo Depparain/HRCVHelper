@@ -68,17 +68,32 @@ export async function downloadCV(cvId = null, filename = null) {
   if (!targetId) return;
 
   const targetFilename = filename || document.getElementById('res-doc-filename')?.textContent || `resume_${targetId}.docx`;
-  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  const token = state.currentToken || localStorage.getItem('hrcv_token') || '';
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
   const fallbackUrl = `${API_BASE}/api/v1/cv/${targetId}/download${tokenParam}`;
+
+  if (!token) {
+    alert('Требуется авторизация. Пожалуйста, выполните вход в систему.');
+    return;
+  }
 
   try {
     const resp = await fetch(`${API_BASE}/api/v1/cv/${targetId}/download`, {
-      headers: state.getAuthHeaders(),
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
     });
+
+    if (resp.status === 401) {
+      alert('Сессия авторизации истекла. Пожалуйста, выполните повторный вход.');
+      return;
+    }
+
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err.detail || 'Ошибка скачивания файла');
     }
+
     const blob = await resp.blob();
     const blobUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -90,7 +105,11 @@ export async function downloadCV(cvId = null, filename = null) {
     setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
   } catch (err) {
     console.warn('Blob download failed, using direct URL:', err);
-    window.location.href = fallbackUrl;
+    if (token) {
+      window.location.href = fallbackUrl;
+    } else {
+      alert('Не удалось скачать файл: ' + (err.message || 'Ошибка'));
+    }
   }
 }
 
@@ -119,17 +138,17 @@ export async function openResultPage(cvId, record) {
 
   document.getElementById('res-doc-filename').textContent = filename;
   const downloadBtn = document.getElementById('res-download-btn');
-  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
-  downloadBtn.href = `${API_BASE}/api/v1/cv/${cvId}/download${tokenParam}`;
-  downloadBtn.setAttribute('download', filename);
-  downloadBtn.onclick = (e) => {
-    e.preventDefault();
-    downloadCV(cvId, filename);
-  };
+  if (downloadBtn) {
+    downloadBtn.onclick = (e) => {
+      e.preventDefault();
+      downloadCV(cvId, filename);
+    };
+  }
 }
 
 export function copyDownloadUrl() {
-  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  const token = state.currentToken || localStorage.getItem('hrcv_token') || '';
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
   const url = `${API_BASE}/api/v1/cv/${state.activeCvId}/download${tokenParam}`;
   navigator.clipboard.writeText(url);
   const textEl = document.getElementById('copy-link-text');

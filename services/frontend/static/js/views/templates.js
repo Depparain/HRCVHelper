@@ -184,12 +184,25 @@ export async function setActiveTemplate(id) {
 }
 
 export async function downloadTemplate(id) {
-  const tokenParam = state.currentToken ? `?token=${encodeURIComponent(state.currentToken)}` : '';
+  const token = state.currentToken || localStorage.getItem('hrcv_token') || '';
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
   const fallbackUrl = `${API_BASE}/api/v1/templates/${id}/download${tokenParam}`;
+
+  if (!token) {
+    alert('Требуется авторизация. Пожалуйста, выполните вход в систему.');
+    return;
+  }
+
   try {
     const resp = await fetch(`${API_BASE}/api/v1/templates/${id}/download`, {
-      headers: state.getAuthHeaders()
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
     });
+    if (resp.status === 401) {
+      alert('Сессия авторизации истекла. Пожалуйста, выполните повторный вход.');
+      return;
+    }
     if (!resp.ok) throw new Error('Ошибка скачивания шаблона');
     const blob = await resp.blob();
     const blobUrl = window.URL.createObjectURL(blob);
@@ -201,7 +214,11 @@ export async function downloadTemplate(id) {
     a.remove();
     setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
   } catch (e) {
-    window.location.href = fallbackUrl;
+    if (token) {
+      window.location.href = fallbackUrl;
+    } else {
+      alert('Не удалось скачать шаблон: ' + (e.message || 'Ошибка'));
+    }
   }
 }
 
